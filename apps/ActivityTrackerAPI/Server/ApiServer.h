@@ -20,6 +20,8 @@ class AppUsageController;
 class ActivityEventController;
 class SessionEventController;
 class UserRoleDisciplineController;
+class BatchController;
+class ServerStatusController;
 
 // Forward declarations for services
 class ADVerificationService;
@@ -78,6 +80,8 @@ private:
     std::shared_ptr<ActivityEventController> m_activityEventController;
     std::shared_ptr<SessionEventController> m_sessionEventController;
     std::shared_ptr<UserRoleDisciplineController> m_userRoleDisciplineController;
+    std::shared_ptr<BatchController> m_batchController;
+    std::shared_ptr<ServerStatusController> m_serverStatusController;
 
     // Repositories
     UserRepository* m_userRepository;

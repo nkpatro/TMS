@@ -99,6 +99,8 @@ set(CONTROLLERS_SOURCES
         Controllers/ActivityEventController.cpp
         Controllers/SessionEventController.cpp
         Controllers/UserRoleDisciplineController.cpp
+        Controllers/BatchController.cpp
+        Controllers/ServerStatusController.cpp
 )
 
 set(CONTROLLERS_HEADERS
@@ -112,6 +114,8 @@ set(CONTROLLERS_HEADERS
         Controllers/ActivityEventController.h
         Controllers/SessionEventController.h
         Controllers/UserRoleDisciplineController.h
+        Controllers/BatchController.h
+        Controllers/ServerStatusController.h
 )
 
 set(SERVER_SOURCES

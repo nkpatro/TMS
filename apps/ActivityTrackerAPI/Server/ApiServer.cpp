@@ -10,6 +10,8 @@
 #include "Controllers/AppUsageController.h"
 #include "Controllers/ActivityEventController.h"
 #include "Controllers/SessionEventController.h"
+#include "Controllers/BatchController.h"
+#include "Controllers/ServerStatusController.h"
 #include "Services/ADVerificationService.h"
 #include "Repositories/UserRepository.h"
 #include "Repositories/MachineRepository.h"
@@ -298,6 +300,21 @@ void ApiServer::setupControllers()
             m_authController.get(),
             this);
 
+        // Create BatchController
+        m_batchController = std::make_shared<BatchController>(
+            m_activityEventRepository,
+            m_appUsageRepository,
+            m_systemMetricsRepository,
+            m_sessionEventRepository,
+            m_sessionRepository,
+            this);
+
+        // Set AuthController for BatchController
+        m_batchController->setAuthController(m_authController.get());
+
+        // Create ServerStatusController
+        m_serverStatusController = std::make_shared<ServerStatusController>(this);
+
         LOG_DEBUG("Registering controllers with server");
 
         // Register controllers with the server
@@ -310,6 +327,8 @@ void ApiServer::setupControllers()
         m_server.registerController(m_activityEventController);
         m_server.registerController(m_sessionEventController);
         m_server.registerController(m_userRoleDisciplineController);
+        m_server.registerController(m_batchController);
+        m_server.registerController(m_serverStatusController);
 
         LOG_INFO("Controllers setup completed successfully");
     }
