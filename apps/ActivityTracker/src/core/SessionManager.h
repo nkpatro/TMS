@@ -75,6 +75,10 @@ public:
     // Data synchronization
     bool syncPendingData();
 
+    QString getUsername() const { return m_username; }
+    QString getMachineId() const { return m_machineId; }
+    void updateMachineId(const QString &machineId) { m_machineId = machineId; }
+
 private:
     enum class DataType {
         SessionEvent,

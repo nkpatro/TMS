@@ -11,6 +11,7 @@
 MultiUserManager::MultiUserManager(QObject *parent)
     : QObject(parent)
     , m_isRunning(false)
+    , m_previousUser("")
 {
     // Set up polling timer
     connect(&m_pollTimer, &QTimer::timeout, this, &MultiUserManager::checkUserSessions);
@@ -28,8 +29,14 @@ bool MultiUserManager::initialize()
 {
     LOG_INFO("Initializing MultiUserManager");
 
-    // Initial update of active users
-    updateActiveUsers();
+    // Don't set m_previousUser yet - we'll set it after initial update
+
+    // Initial update of active users (with modified flag to prevent signal emission)
+    bool initialUpdate = true;
+    updateActiveUsers(initialUpdate);
+
+    // Now that we have our initial state, set the previous user to match current
+    m_previousUser = m_currentUser;
 
     return true;
 }
@@ -120,10 +127,9 @@ void MultiUserManager::checkUserSessions()
     }
 }
 
-void MultiUserManager::updateActiveUsers()
+void MultiUserManager::updateActiveUsers(bool initialUpdate)
 {
     m_activeUsers.clear();
-    m_currentUser = "";
 
 #ifdef Q_OS_WIN
     // Get active sessions on Windows
@@ -172,8 +178,22 @@ void MultiUserManager::updateActiveUsers()
     }
 #endif
 
+    // If we still don't have a current user but have active users,
+    // use the first active user as the current user
+    if (m_currentUser.isEmpty() && !m_activeUsers.isEmpty()) {
+        m_currentUser = m_activeUsers.keys().first();
+        LOG_INFO(QString("No user session marked as current, using first active user: %1").arg(m_currentUser));
+    }
+
     // Log active users
     LOG_DEBUG(QString("Current user: %1").arg(m_currentUser));
     QStringList activeUsers = this->activeUsers();
     LOG_DEBUG(QString("Active users: %1").arg(activeUsers.join(", ")));
+
+    // Emit signal if current user changed
+    if (!initialUpdate && !m_currentUser.isEmpty() && m_previousUser != m_currentUser) {
+        LOG_INFO(QString("Current user changed from '%1' to '%2'").arg(m_previousUser, m_currentUser));
+        emit userSessionChanged(m_currentUser, true);
+        m_previousUser = m_currentUser;
+    }
 }

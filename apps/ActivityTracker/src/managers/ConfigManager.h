@@ -1,3 +1,4 @@
+// Updated ConfigManager.h
 #ifndef CONFIGMANAGER_H
 #define CONFIGMANAGER_H
 
@@ -47,6 +48,8 @@ public:
     // Configuration operations
     bool loadLocalConfig();
     bool saveLocalConfig();
+
+    // Server configuration (temporarily disabled)
     bool fetchServerConfig();
     bool updateConfigFromServer(const QJsonObject& serverConfig);
 
@@ -55,6 +58,7 @@ signals:
     void machineIdChanged(const QString& machineId);
 
 private:
+    // Helper methods
     void loadDefaults();
     QString configFilePath() const;
     bool configFileExists() const;

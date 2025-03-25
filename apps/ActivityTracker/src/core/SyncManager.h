@@ -51,6 +51,7 @@ public:
     bool processPendingQueue(int maxItems = 50);
     bool isOfflineMode() const { return m_offlineMode; }
     int queueSize() const { return m_dataQueue.size(); }
+    int syncInterval() const { return m_syncInterval; }
     
 public slots:
     void checkConnection();

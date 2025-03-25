@@ -22,6 +22,7 @@ public:
 
     // Authentication
     bool authenticate(const QString &username, const QString &machineId, QJsonObject &responseData);
+    bool isAuthenticated() const;
     bool logout(QJsonObject &responseData);
     bool getUserProfile(QJsonObject &responseData);
     bool refreshToken(const QString &refreshToken, QJsonObject &responseData);
@@ -117,6 +118,8 @@ private:
     QString m_authToken;
     QMutex m_mutex; // For thread safety
     bool m_initialized;
+    QString m_username;
+    QString m_machineId;
 };
 
 #endif // APIMANAGER_H

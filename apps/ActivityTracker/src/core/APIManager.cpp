@@ -2,6 +2,7 @@
 #include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QEventLoop>
+#include <QTimer>
 #include <QUrlQuery>
 #include "logger/logger.h"
 
@@ -45,9 +46,17 @@ bool APIManager::authenticate(const QString &username, const QString &machineId,
 
     LOG_INFO(QString("Authenticating user: %1 on machine: %2").arg(username, machineId));
 
+    // Store credentials for potential later reauthentication
+    m_username = username;
+    m_machineId = machineId;
+
     QJsonObject authData;
     authData["username"] = username;
     authData["machine_id"] = machineId;
+
+    // Add service_id parameter - required by the server API
+    // Using a default application ID for the service
+    authData["service_id"] = "activity-tracker-service";
 
     bool success = sendRequest("auth/service-token", authData, responseData, "POST", false);
 
@@ -352,8 +361,29 @@ bool APIManager::sendRequest(const QString &endpoint, const QJsonObject &data, Q
     if (requiresAuth) {
         QString token = getAuthToken();
         if (token.isEmpty()) {
-            LOG_ERROR("No authentication token available");
-            return false;
+            LOG_WARNING("No authentication token available, attempting to reauthenticate");
+
+            // Try to reauthenticate if we have credentials
+            if (!m_username.isEmpty() && !m_machineId.isEmpty()) {
+                QJsonObject authResponse;
+                bool authenticated = authenticate(m_username, m_machineId, authResponse);
+                if (!authenticated) {
+                    LOG_ERROR("Reauthentication failed");
+                    return false;
+                }
+
+                // Now get the new token
+                token = getAuthToken();
+                if (token.isEmpty()) {
+                    LOG_ERROR("Still no authentication token after reauthentication");
+                    return false;
+                }
+
+                LOG_INFO("Reauthentication successful, proceeding with request");
+            } else {
+                LOG_ERROR("Cannot reauthenticate: missing username or machineId");
+                return false;
+            }
         }
         request.setRawHeader("Authorization", QString("Bearer %1").arg(token).toUtf8());
     }
@@ -362,15 +392,30 @@ bool APIManager::sendRequest(const QString &endpoint, const QJsonObject &data, Q
     QEventLoop loop;
     QNetworkReply *reply = nullptr;
 
+    // Add request timeout
+    QTimer timeoutTimer;
+    timeoutTimer.setSingleShot(true);
+    connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+    // Set reasonable timeout (10 seconds)
+    const int requestTimeoutMs = 10000;
+
+    // Log request details at debug level
+    LOG_DEBUG(QString("Sending %1 request to: %2").arg(method, url));
+
     // Send the request based on the method
     if (method == "GET") {
         reply = m_networkManager->get(request);
     } else if (method == "POST") {
         QJsonDocument doc(data);
-        reply = m_networkManager->post(request, doc.toJson());
+        QByteArray jsonData = doc.toJson();
+        LOG_DEBUG(QString("POST data: %1").arg(QString::fromUtf8(jsonData)));
+        reply = m_networkManager->post(request, jsonData);
     } else if (method == "PUT") {
         QJsonDocument doc(data);
-        reply = m_networkManager->put(request, doc.toJson());
+        QByteArray jsonData = doc.toJson();
+        LOG_DEBUG(QString("PUT data: %1").arg(QString::fromUtf8(jsonData)));
+        reply = m_networkManager->put(request, jsonData);
     } else if (method == "DELETE") {
         reply = m_networkManager->deleteResource(request);
     } else {
@@ -381,31 +426,130 @@ bool APIManager::sendRequest(const QString &endpoint, const QJsonObject &data, Q
     // Connect signals to handle the reply
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
 
-    // Start the event loop - this will block until the request is finished
+    // Start the timeout timer
+    timeoutTimer.start(requestTimeoutMs);
+
+    // Start the event loop - this will block until the request is finished or timeout
     loop.exec();
+
+    // Check if timeout occurred
+    if (timeoutTimer.isActive()) {
+        // Timer is still active, meaning the request finished before timeout
+        timeoutTimer.stop();
+    } else {
+        // Timer is not active, meaning timeout occurred
+        if (reply) {
+            reply->abort();
+            reply->deleteLater();
+            LOG_ERROR(QString("Request timeout for %1 %2").arg(method, url));
+            return false;
+        }
+    }
 
     // Process the reply
     bool success = processReply(reply, responseData);
-    reply->deleteLater();
 
+    // Handle token expiration or auth errors
+    if (!success && requiresAuth) {
+        QNetworkReply::NetworkError error = reply->error();
+        int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+        // Check for auth errors (401 Unauthorized or 403 Forbidden)
+        if (httpStatus == 401 || httpStatus == 403) {
+            LOG_WARNING("Authentication error, attempting to refresh token");
+
+            // Clean up the old reply
+            reply->deleteLater();
+
+            // Try to reauthenticate
+            if (!m_username.isEmpty() && !m_machineId.isEmpty()) {
+                QJsonObject authResponse;
+                bool authenticated = authenticate(m_username, m_machineId, authResponse);
+                if (authenticated) {
+                    LOG_INFO("Token refreshed successfully, retrying request");
+
+                    // Retry the request with the new token
+                    return sendRequest(endpoint, data, responseData, method, requiresAuth);
+                } else {
+                    LOG_ERROR("Failed to refresh token");
+                }
+            }
+        }
+    }
+
+    // Cleanup
+    reply->deleteLater();
     return success;
 }
 
 bool APIManager::processReply(QNetworkReply *reply, QJsonObject &responseData)
 {
-    if (reply->error() != QNetworkReply::NoError) {
-        LOG_ERROR(QString("Network error: %1").arg(reply->errorString()));
+    if (!reply) {
+        LOG_ERROR("Network reply is null");
+        return false;
+    }
+
+    QNetworkReply::NetworkError error = reply->error();
+    if (error != QNetworkReply::NoError) {
+        int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        QString errorString = reply->errorString();
+
+        LOG_ERROR(QString("Network error (%1): %2, HTTP status: %3")
+                 .arg(error)
+                 .arg(errorString)
+                 .arg(httpStatus));
+
+        // Try to parse error response if available
+        QByteArray errorResponse = reply->readAll();
+        if (!errorResponse.isEmpty()) {
+            LOG_DEBUG(QString("Error response: %1").arg(QString::fromUtf8(errorResponse)));
+
+            // Try to parse as JSON
+            QJsonDocument errorDoc = QJsonDocument::fromJson(errorResponse);
+            if (!errorDoc.isNull() && errorDoc.isObject()) {
+                responseData = errorDoc.object();
+
+                // Extract error message if available
+                if (responseData.contains("message")) {
+                    LOG_ERROR("Server error message: " + responseData["message"].toString());
+                }
+            }
+        }
+
         return false;
     }
 
     // Read the response data
     QByteArray responseBytes = reply->readAll();
 
-    // Parse JSON response
-    QJsonDocument doc = QJsonDocument::fromJson(responseBytes);
+    // Log response at debug level (truncated for large responses)
+    if (responseBytes.size() <= 1024) {
+        LOG_DEBUG(QString("Response: %1").arg(QString::fromUtf8(responseBytes)));
+    } else {
+        LOG_DEBUG(QString("Response (truncated): %1...").arg(QString::fromUtf8(responseBytes.left(1024))));
+    }
 
-    if (doc.isNull() || !doc.isObject()) {
-        LOG_ERROR("Failed to parse JSON response: " + QString(responseBytes));
+    // Check for empty response
+    if (responseBytes.isEmpty()) {
+        // Some endpoints return empty responses for success
+        // If we got here with no network error, consider it a success
+        responseData = QJsonObject(); // Empty object
+        return true;
+    }
+
+    // Parse JSON response
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(responseBytes, &parseError);
+
+    if (parseError.error != QJsonParseError::NoError) {
+        LOG_ERROR(QString("JSON parse error: %1 at offset %2")
+                 .arg(parseError.errorString())
+                 .arg(parseError.offset));
+        return false;
+    }
+
+    if (!doc.isObject()) {
+        LOG_ERROR("Response is not a JSON object");
         return false;
     }
 
@@ -1041,5 +1185,10 @@ bool APIManager::getServerConfiguration(QJsonObject& configData)
     LOG_DEBUG("Fetching server configuration");
 
     return sendRequest("config", QJsonObject(), configData, "GET");
+}
+
+bool APIManager::isAuthenticated() const {
+    QMutexLocker locker(const_cast<QMutex*>(&m_mutex));
+    return !m_authToken.isEmpty();
 }
 

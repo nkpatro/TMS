@@ -118,7 +118,48 @@ bool SyncManager::createOrReopenSession(const QDate& date, QUuid& sessionId, QDa
     // First, ensure server connectivity
     bool isConnected = false;
     if (!m_offlineMode && m_sessionManager->checkServerConnection(isConnected) && isConnected) {
-        // We're online, use server API to manage session
+        // We're online, try to use server API
+
+        // Check if we're authenticated
+        if (!m_apiManager->isAuthenticated()) {
+            LOG_INFO("Not authenticated, attempting authentication");
+
+            // Get username and machineId from the session manager
+            QString username = m_sessionManager->getUsername();
+            QString machineId = m_sessionManager->getMachineId();
+
+            if (username.isEmpty() || machineId.isEmpty()) {
+                LOG_ERROR("Username or machineId not set");
+                m_offlineMode = true;
+                emit connectionStateChanged(false);
+
+                // Create temporary offline session
+                sessionId = QUuid::createUuid();
+                sessionStart = QDateTime::currentDateTime();
+                isNewSession = true;
+                return true;
+            }
+
+            // Try to authenticate
+            QJsonObject responseData;
+            bool success = m_apiManager->authenticate(username, machineId, responseData);
+
+            if (!success) {
+                LOG_ERROR("Authentication failed");
+                m_offlineMode = true;
+                emit connectionStateChanged(false);
+
+                // Create temporary offline session
+                sessionId = QUuid::createUuid();
+                sessionStart = QDateTime::currentDateTime();
+                isNewSession = true;
+                return true;
+            }
+
+            LOG_INFO("Authentication successful");
+        }
+
+        // We're authenticated, create or find session
         return m_sessionManager->createOrReopenSession(date, sessionId, sessionStart, isNewSession);
     } else {
         // We're offline, create a local session
@@ -206,84 +247,181 @@ bool SyncManager::processPendingQueue(int maxItems)
         return false;
     }
     
+    // Ensure we're authenticated before processing queue
+    if (!m_apiManager->isAuthenticated()) {
+        LOG_INFO("Not authenticated, attempting authentication before processing queue");
+
+        // Get username and machineId from the session manager
+        QString username = m_sessionManager->getUsername();
+        QString machineId = m_sessionManager->getMachineId();
+
+        if (username.isEmpty() || machineId.isEmpty()) {
+            LOG_ERROR("Username or machineId not set, cannot authenticate");
+            m_offlineMode = true;
+            emit connectionStateChanged(false);
+            return false;
+        }
+
+        // Try to authenticate
+        QJsonObject responseData;
+        bool success = m_apiManager->authenticate(username, machineId, responseData);
+
+        if (!success) {
+            LOG_ERROR("Authentication failed, cannot process queue");
+            m_offlineMode = true;
+            emit connectionStateChanged(false);
+            return false;
+        }
+
+        LOG_INFO("Authentication successful, proceeding with queue processing");
+    }
+
     QMutexLocker locker(&m_queueMutex);
-    
+
     if (m_dataQueue.isEmpty()) {
         return true;
     }
-    
+
     LOG_INFO(QString("Processing pending queue (items: %1, max: %2)")
-         .arg(m_dataQueue.size())
-         .arg(maxItems > 0 ? QString::number(maxItems) : "all"));
-    
+             .arg(m_dataQueue.size())
+             .arg(maxItems > 0 ? QString::number(maxItems) : "all"));
+
     // Group data by session and type for batch processing
     QMap<QUuid, QJsonArray> sessionEvents;
     QMap<QUuid, QJsonArray> activityEvents;
     QMap<QUuid, QJsonArray> systemMetrics;
-    
+
     int processed = 0;
     bool success = true;
-    
+
     // First pass: organize data into batches
     while (!m_dataQueue.isEmpty() && (maxItems <= 0 || processed < maxItems)) {
         const QueuedData& item = m_dataQueue.head();
-        
+
         switch (item.type) {
-            case SessionEvent:
+            case DataType::SessionEvent:
                 if (!sessionEvents.contains(item.sessionId)) {
                     sessionEvents[item.sessionId] = QJsonArray();
                 }
                 sessionEvents[item.sessionId].append(item.data);
                 break;
-                
-            case ActivityEvent:
+
+            case DataType::ActivityEvent:
                 if (!activityEvents.contains(item.sessionId)) {
                     activityEvents[item.sessionId] = QJsonArray();
                 }
                 activityEvents[item.sessionId].append(item.data);
                 break;
-                
-            case SystemMetrics:
+
+            case DataType::SystemMetrics:
                 if (!systemMetrics.contains(item.sessionId)) {
                     systemMetrics[item.sessionId] = QJsonArray();
                 }
                 systemMetrics[item.sessionId].append(item.data);
                 break;
-                
-            case AppUsage:
-            case AfkPeriod:
-                // These are handled individually by the SessionManager
-                // Just remove from queue here
+
+            case DataType::AppUsage: {
+                // Handle app usage items individually
+                locker.unlock();
+                bool itemSuccess = false;
+
+                if (item.data.contains("action") && item.data["action"].toString() == "end") {
+                    // End app usage request
+                    QUuid usageId = QUuid(item.data["usage_id"].toString());
+                    QJsonObject response;
+                    itemSuccess = m_apiManager->endAppUsage(usageId, item.data, response);
+                    emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
+                } else {
+                    // Start app usage request
+                    QJsonObject response;
+                    itemSuccess = m_apiManager->startAppUsage(item.data, response);
+                    emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
+                }
+
+                if (!itemSuccess) {
+                    success = false;
+                }
+
+                locker.relock();
                 break;
+            }
+
+            case DataType::AfkPeriod: {
+                // Handle AFK period items individually
+                locker.unlock();
+                bool itemSuccess = false;
+
+                if (item.data.contains("action") && item.data["action"].toString() == "end") {
+                    // End AFK period request
+                    QUuid afkId = QUuid(item.data["afk_id"].toString());
+                    QJsonObject response;
+                    itemSuccess = m_apiManager->endAfkPeriod(afkId, item.data, response);
+                    emit dataProcessed(DataType::AfkPeriod, item.sessionId, itemSuccess);
+                } else {
+                    // Start AFK period request
+                    QJsonObject response;
+                    itemSuccess = m_apiManager->startAfkPeriod(item.data, response);
+                    emit dataProcessed(DataType::AfkPeriod, item.sessionId, itemSuccess);
+                }
+
+                if (!itemSuccess) {
+                    success = false;
+                }
+
+                locker.relock();
+                break;
+            }
         }
-        
+
         processed++;
         m_dataQueue.dequeue();
     }
-    
+
+    // Update queue size after dequeuing
+    int newQueueSize = m_dataQueue.size();
     locker.unlock();
-    
+    emit queueSizeChanged(newQueueSize);
+
     // Second pass: send batched data
-    QMap<QUuid, QJsonArray>::const_iterator i;
-    
     // Process session events
-    for (i = sessionEvents.constBegin(); i != sessionEvents.constEnd(); ++i) {
-        if (!sendBatchedData(i.key(), i.value(), QJsonArray(), QJsonArray())) {
-            success = false;
+    for (auto it = sessionEvents.constBegin(); it != sessionEvents.constEnd(); ++it) {
+        QUuid sessionId = it.key();
+        QJsonArray events = it.value();
+
+        if (!events.isEmpty()) {
+            bool batchSuccess = sendBatchedData(sessionId, events, QJsonArray(), QJsonArray());
+            if (!batchSuccess) {
+                success = false;
+            }
+            emit dataProcessed(DataType::SessionEvent, sessionId, batchSuccess);
         }
     }
-    
+
     // Process activity events
-    for (i = activityEvents.constBegin(); i != activityEvents.constEnd(); ++i) {
-        if (!sendBatchedData(i.key(), QJsonArray(), i.value(), QJsonArray())) {
-            success = false;
+    for (auto it = activityEvents.constBegin(); it != activityEvents.constEnd(); ++it) {
+        QUuid sessionId = it.key();
+        QJsonArray events = it.value();
+
+        if (!events.isEmpty()) {
+            bool batchSuccess = sendBatchedData(sessionId, QJsonArray(), events, QJsonArray());
+            if (!batchSuccess) {
+                success = false;
+            }
+            emit dataProcessed(DataType::ActivityEvent, sessionId, batchSuccess);
         }
     }
-    
+
     // Process system metrics
-    for (i = systemMetrics.constBegin(); i != systemMetrics.constEnd(); ++i) {
-        if (!sendBatchedData(i.key(), QJsonArray(), QJsonArray(), i.value())) {
-            success = false;
+    for (auto it = systemMetrics.constBegin(); it != systemMetrics.constEnd(); ++it) {
+        QUuid sessionId = it.key();
+        QJsonArray metrics = it.value();
+
+        if (!metrics.isEmpty()) {
+            bool batchSuccess = sendBatchedData(sessionId, QJsonArray(), QJsonArray(), metrics);
+            if (!batchSuccess) {
+                success = false;
+            }
+            emit dataProcessed(DataType::SystemMetrics, sessionId, batchSuccess);
         }
     }
     

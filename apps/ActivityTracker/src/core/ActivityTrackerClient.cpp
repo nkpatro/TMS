@@ -106,7 +106,20 @@ bool ActivityTrackerClient::initialize(const QString& serverUrl, const QString& 
         return false;
     }
 
-    // 7. Initialize Session State Machine
+    // 7. Check if machine is registered, register if needed
+    bool machineRegistered = checkAndRegisterMachine();
+    if (!machineRegistered) {
+        LOG_WARNING("Machine registration failed, will operate in offline mode initially");
+    }
+
+    // 8. Attempt authentication with server
+    QJsonObject authResponse;
+    bool authenticated = m_apiManager->authenticate(m_username, m_machineId, authResponse);
+    if (!authenticated) {
+        LOG_WARNING("Authentication failed, will operate in offline mode initially");
+    }
+
+    // 9. Initialize Session State Machine
     m_sessionStateMachine = new SessionStateMachine(m_sessionManager, this);
     if (!m_sessionStateMachine->initialize()) {
         LOG_ERROR("Failed to initialize Session State Machine");
@@ -119,7 +132,7 @@ bool ActivityTrackerClient::initialize(const QString& serverUrl, const QString& 
               this->onSessionStateChanged(newState, oldState);
             });
 
-    // 8. Initialize Sync Manager
+    // 10. Initialize Sync Manager
     m_syncManager = new SyncManager(m_apiManager, m_sessionManager, this);
     if (!m_syncManager->initialize(m_dataSendInterval, 1000)) {
         LOG_ERROR("Failed to initialize Sync Manager");
@@ -132,7 +145,7 @@ bool ActivityTrackerClient::initialize(const QString& serverUrl, const QString& 
     connect(m_syncManager, &SyncManager::syncCompleted,
         this, &ActivityTrackerClient::onSyncCompleted);
 
-    // 9. Initialize Activity Monitor Batcher
+    // 11. Initialize Activity Monitor Batcher
     m_batcher = new ActivityMonitorBatcher(this);
     int batchInterval = (m_dataSendInterval > 0) ? qMin(1000, m_dataSendInterval / 10) : 0;
     m_batcher->initialize(batchInterval);
@@ -145,7 +158,7 @@ bool ActivityTrackerClient::initialize(const QString& serverUrl, const QString& 
     connect(m_batcher, &ActivityMonitorBatcher::batchedAppActivity,
         this, &ActivityTrackerClient::onBatchedAppActivity);
 
-    // 10. Initialize Monitor Manager
+    // 12. Initialize Monitor Manager
     m_monitorManager = new MonitorManager(this);
     if (!m_monitorManager->initialize(
         m_configManager->trackKeyboardMouse(),
@@ -359,24 +372,39 @@ void ActivityTrackerClient::onConfigChanged()
 {
     LOG_INFO("Configuration changed, applying updates");
 
+    // Lock to prevent recursion/reentry issues
+    static bool isUpdating = false;
+    if (isUpdating) {
+        LOG_WARNING("Already processing config change, skipping recursive update");
+        return;
+    }
+
+    isUpdating = true;
+
     // Update local settings from config
     m_serverUrl = m_configManager->serverUrl();
     m_dataSendInterval = m_configManager->dataSendInterval();
     m_idleTimeThreshold = m_configManager->idleTimeThreshold();
 
-    // Apply settings to components
+    // Apply settings to components (careful not to trigger more signals)
     if (m_monitorManager) {
         m_monitorManager->setIdleTimeThreshold(m_idleTimeThreshold);
     }
 
     if (m_syncManager) {
-        m_syncManager->initialize(m_dataSendInterval, 1000);
+        // Avoid re-initializing if not necessary
+        if (m_syncManager->syncInterval() != m_dataSendInterval) {
+            m_syncManager->initialize(m_dataSendInterval, 1000);
+        }
     }
 
     if (m_batcher) {
         int batchInterval = (m_dataSendInterval > 0) ? qMin(1000, m_dataSendInterval / 10) : 0;
         m_batcher->initialize(batchInterval);
     }
+
+    isUpdating = false;
+    LOG_INFO("Configuration updates applied successfully");
 }
 
 void ActivityTrackerClient::onMachineIdChanged(const QString& machineId)
@@ -699,5 +727,86 @@ bool ActivityTrackerClient::recordSystemMetrics(float cpuUsage, float gpuUsage, 
     data["memory_usage"] = ramUsage;
 
     return m_syncManager->queueData(SyncManager::DataType::SystemMetrics, sessionId, data);
+}
+
+bool ActivityTrackerClient::checkAndRegisterMachine() {
+    if (!m_apiManager || !m_sessionManager) {
+        LOG_ERROR("API Manager or Session Manager not initialized");
+        return false;
+    }
+
+    LOG_INFO("Checking machine registration status");
+
+    // First try to get machine info
+    QJsonObject machineResponse;
+    bool machineExists = m_apiManager->getMachine(m_machineId, machineResponse);
+
+    if (machineExists) {
+        LOG_INFO("Machine already registered with ID: " + m_machineId);
+        return true;
+    }
+
+    // Machine not found, register it
+    LOG_INFO("Machine not registered, attempting registration");
+
+    QString hostname = QHostInfo::localHostName();
+    QString osName = QSysInfo::prettyProductName();
+
+    QJsonObject machineData;
+    bool registered = m_sessionManager->registerMachine(
+        hostname,
+        osName,
+        QSysInfo::machineUniqueId(),
+        "", // Mac address can be obtained if needed
+        QSysInfo::currentCpuArchitecture(),
+        "", // GPU info would need to be collected
+        0,  // RAM size would need to be collected
+        "", // IP not needed
+        &machineData
+    );
+
+    // we should consider registration successful when we get machine data back
+    if (machineData.contains("id")) {
+        // Update machine ID to match what was registered on the server
+        QString newMachineId = machineData["id"].toString();
+        LOG_INFO("Machine registered successfully with ID: " + newMachineId);
+
+        // Update our stored machine ID if different
+        if (newMachineId != m_machineId) {
+            LOG_INFO("Updating machine ID from " + m_machineId + " to " + newMachineId);
+
+            // IMPORTANT: Update directly without triggering signals
+            m_machineId = newMachineId;
+
+            // Update config without triggering signals
+            if (m_configManager) {
+                // Temporarily disconnect signal-slot connections
+                disconnect(m_configManager, &ConfigManager::machineIdChanged,
+                          this, &ActivityTrackerClient::onMachineIdChanged);
+                disconnect(m_configManager, &ConfigManager::configChanged,
+                          this, &ActivityTrackerClient::onConfigChanged);
+
+                // Update the configuration
+                m_configManager->setMachineId(newMachineId);
+
+                // Reconnect signals
+                connect(m_configManager, &ConfigManager::machineIdChanged,
+                       this, &ActivityTrackerClient::onMachineIdChanged);
+                connect(m_configManager, &ConfigManager::configChanged,
+                       this, &ActivityTrackerClient::onConfigChanged);
+
+                LOG_INFO("Machine ID updated in configuration without triggering signals");
+            }
+
+            if (m_sessionManager) {
+                // Update SessionManager with the new machine ID directly
+                m_sessionManager->updateMachineId(newMachineId);
+            }
+        }
+        return true;
+    }
+
+    LOG_ERROR("Failed to register machine");
+    return false;
 }
 

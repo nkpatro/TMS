@@ -90,6 +90,15 @@ bool ActivityTrackerService::initialize()
     // Get current user
     if (m_multiUserMode && m_userManager) {
         m_currentUser = m_userManager->currentUser();
+
+        // If current user is empty but active users exist, use the first active user
+        if (m_currentUser.isEmpty()) {
+            QStringList activeUsers = m_userManager->activeUsers();
+            if (!activeUsers.isEmpty()) {
+                m_currentUser = activeUsers.first();
+                LOG_INFO(QString("Current user not set, using first active user: %1").arg(m_currentUser));
+            }
+        }
     } else {
         // Use configured or environment user
         m_currentUser = m_configManager->defaultUsername();
@@ -99,21 +108,36 @@ bool ActivityTrackerService::initialize()
                 m_currentUser = qgetenv("USERNAME");
             }
             if (m_currentUser.isEmpty()) {
-                m_currentUser = "unknown";
+                // Try to get the current user from MultiUserManager's active users
+                if (m_multiUserMode && m_userManager && !m_userManager->activeUsers().isEmpty()) {
+                    m_currentUser = m_userManager->activeUsers().first();
+                    LOG_INFO(QString("Using first active user as current user: %1").arg(m_currentUser));
+                } else {
+                    m_currentUser = "unknown";
+                    LOG_WARNING("Could not determine current user, using 'unknown'");
+                }
             }
         }
     }
 
+    // Final check for empty username
+    if (m_currentUser.isEmpty()) {
+        m_currentUser = "unknown";
+        LOG_WARNING("Still could not determine current user, using 'unknown'");
+    } else {
+        LOG_INFO(QString("Using username: %1").arg(m_currentUser));
+    }
+
     // Create tracker client
     m_trackerClient = new ActivityTrackerClient(this);
-    
+
     // Connect client signals
     connect(m_trackerClient, &ActivityTrackerClient::statusChanged,
             this, &ActivityTrackerService::onStatusChanged);
     connect(m_trackerClient, &ActivityTrackerClient::errorOccurred,
             this, &ActivityTrackerService::onErrorOccurred);
 
-    // Initialize tracker client
+    // Initialize tracker client with server status check first
     if (!m_trackerClient->initialize(m_serverUrl, m_currentUser, m_machineId)) {
         LOG_ERROR("Failed to initialize ActivityTrackerClient");
         return false;

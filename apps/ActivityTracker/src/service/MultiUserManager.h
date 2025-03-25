@@ -32,8 +32,9 @@ private:
     bool m_isRunning;
     QString m_currentUser;
     QMap<QString, bool> m_activeUsers;
+    QString m_previousUser;
 
-    void updateActiveUsers();
+    void updateActiveUsers(bool initialUpdate = false);
 };
 
 #endif // MULTIUSERMANAGER_H

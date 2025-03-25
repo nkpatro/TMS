@@ -108,6 +108,7 @@ private:
 
     // Helper methods
     bool handleDayChange();
+    bool checkAndRegisterMachine();
 
     // Event recording methods
     bool recordSessionEvent(const QString &eventType, const QJsonObject &eventData = QJsonObject());
