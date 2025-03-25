@@ -24,63 +24,91 @@ void ADVerificationService::setADServerUrl(const QString &url)
     m_adServerUrl = url;
 }
 
+// bool ADVerificationService::verifyUserCredentials(const QString &username, const QString &password, QJsonObject &userInfo)
+// {
+//     LOG_DEBUG(QString("Verifying user credentials with AD: %1").arg(username));
+//
+//     // Setup AD authentication request
+//     QNetworkRequest request(QUrl(m_adServerUrl + "/auth"));
+//     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+//
+//     // Create request body
+//     QJsonObject requestBody;
+//     requestBody["username"] = username;
+//     requestBody["password"] = password;
+//     requestBody["require_password_validation"] = true;
+//     QJsonDocument requestDoc(requestBody);
+//
+//     // Send request
+//     QNetworkReply *reply = m_networkManager->post(request, requestDoc.toJson());
+//
+//     // Wait for response
+//     QEventLoop loop;
+//     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+//     loop.exec();
+//
+//     // Process response
+//     bool result = processVerificationResponse(reply, userInfo);
+//     reply->deleteLater();
+//
+//     return result;
+// }
+//
+// bool ADVerificationService::verifyUserExists(const QString &username, QJsonObject &userInfo)
+// {
+//     LOG_DEBUG(QString("Verifying user exists in AD: %1").arg(username));
+//
+//     // Setup AD user verification request (no password validation)
+//     QNetworkRequest request(QUrl(m_adServerUrl + "/verify-user"));
+//     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+//
+//     // Create request body - only check if user exists
+//     QJsonObject requestBody;
+//     requestBody["username"] = username;
+//     requestBody["require_password_validation"] = false;  // Don't validate password
+//     QJsonDocument requestDoc(requestBody);
+//
+//     // Send request
+//     QNetworkReply *reply = m_networkManager->post(request, requestDoc.toJson());
+//
+//     // Wait for response
+//     QEventLoop loop;
+//     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+//     loop.exec();
+//
+//     // Process response
+//     bool result = processVerificationResponse(reply, userInfo);
+//     reply->deleteLater();
+//
+//     return result;
+// }
+
 bool ADVerificationService::verifyUserCredentials(const QString &username, const QString &password, QJsonObject &userInfo)
 {
-    LOG_DEBUG(QString("Verifying user credentials with AD: %1").arg(username));
+    LOG_DEBUG(QString("MOCK: Verifying user credentials with AD: %1").arg(username));
 
-    // Setup AD authentication request
-    QNetworkRequest request(QUrl(m_adServerUrl + "/auth"));
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    // DEVELOPMENT ONLY: Mock successful AD verification
+    userInfo["displayName"] = username;
+    userInfo["email"] = username + "@redefine.co";
+    userInfo["givenName"] = username.split('.').value(0, username);
+    userInfo["surname"] = username.split('.').value(1, "");
 
-    // Create request body
-    QJsonObject requestBody;
-    requestBody["username"] = username;
-    requestBody["password"] = password;
-    requestBody["require_password_validation"] = true;
-    QJsonDocument requestDoc(requestBody);
-
-    // Send request
-    QNetworkReply *reply = m_networkManager->post(request, requestDoc.toJson());
-
-    // Wait for response
-    QEventLoop loop;
-    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
-
-    // Process response
-    bool result = processVerificationResponse(reply, userInfo);
-    reply->deleteLater();
-
-    return result;
+    LOG_INFO("MOCK: AD verification successful");
+    return true;
 }
 
 bool ADVerificationService::verifyUserExists(const QString &username, QJsonObject &userInfo)
 {
-    LOG_DEBUG(QString("Verifying user exists in AD: %1").arg(username));
+    LOG_DEBUG(QString("MOCK: Verifying user exists in AD: %1").arg(username));
 
-    // Setup AD user verification request (no password validation)
-    QNetworkRequest request(QUrl(m_adServerUrl + "/verify-user"));
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    // DEVELOPMENT ONLY: Mock successful AD verification
+    userInfo["displayName"] = username;
+    userInfo["email"] = username + "@redefine.co";
+    userInfo["givenName"] = username.split('.').value(0, username);
+    userInfo["surname"] = username.split('.').value(1, "");
 
-    // Create request body - only check if user exists
-    QJsonObject requestBody;
-    requestBody["username"] = username;
-    requestBody["require_password_validation"] = false;  // Don't validate password
-    QJsonDocument requestDoc(requestBody);
-
-    // Send request
-    QNetworkReply *reply = m_networkManager->post(request, requestDoc.toJson());
-
-    // Wait for response
-    QEventLoop loop;
-    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
-
-    // Process response
-    bool result = processVerificationResponse(reply, userInfo);
-    reply->deleteLater();
-
-    return result;
+    LOG_INFO("MOCK: AD verification successful");
+    return true;
 }
 
 bool ADVerificationService::processVerificationResponse(QNetworkReply *reply, QJsonObject &userInfo)
