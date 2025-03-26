@@ -445,6 +445,21 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             }
         }
 
+        // NEW CODE - Check for and end any existing active sessions for this user/machine
+        if (hasOverlappingSession(user->id(), machineId)) {
+            LOG_INFO(QString("Found overlapping active session for user %1 on machine %2, ending it before creating a new one")
+                .arg(user->name(), machineId.toString()));
+
+            // End all active sessions for this user/machine
+            bool endSuccess = endAllActiveSessions(user->id(), machineId);
+            if (!endSuccess) {
+                LOG_ERROR(QString("Failed to end existing active sessions for user %1 on machine %2")
+                    .arg(user->name(), machineId.toString()));
+                return createErrorResponse("Failed to end existing active sessions",
+                    QHttpServerResponder::StatusCode::InternalServerError);
+            }
+        }
+
         // Get current date and time
         QDateTime currentDateTime = QDateTime::currentDateTimeUtc();
         QDate currentDate = currentDateTime.date();
@@ -456,7 +471,6 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
         if (todaySession) {
             SessionModel* session = todaySession.data();
 
-            // Fix invalid login time if needed
             if (!session->loginTime().isValid()) {
                 LOG_WARNING(QString("Session found with invalid login time: %1. Fixing it.").arg(session->id().toString()));
                 session->setLoginTime(currentDateTime.addSecs(-3600)); // Set to 1 hour ago

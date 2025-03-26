@@ -1,3 +1,5 @@
+I'll update the API routes documentation by adding the missing sections and endpoints:
+
 # API Routes Documentation
 
 This document contains all the API routes implemented in the application, organized by controller. Each route includes its HTTP method, path, description, required inputs, and expected outputs.
@@ -12,6 +14,8 @@ This document contains all the API routes implemented in the application, organi
 7. [Machine Routes](#machine-routes)
 8. [System Metrics Routes](#system-metrics-routes)
 9. [User Role Discipline Routes](#user-role-discipline-routes)
+10. [Batch Operation Routes](#batch-operation-routes)
+11. [Server Status Routes](#server-status-routes)
 
 ## Authentication Routes
 
@@ -53,6 +57,7 @@ This document contains all the API routes implemented in the application, organi
 | `GET` | `/api/activities` | Get all activity events | Authentication, Optional limit parameter | JSON array of activity events |
 | `GET` | `/api/activities/<id>` | Get activity event by ID | Authentication, Event ID in path | JSON object of the activity event |
 | `GET` | `/api/sessions/<sessionId>/activities` | Get events by session ID | Authentication, Session ID in path, Optional limit and offset parameters | JSON array of activity events for the session |
+| `GET` | `/api/sessions/<sessionId>/activities/type/<eventType>` | Get events by type for a session | Authentication, Session ID in path, Event type in path, Optional limit and offset parameters | JSON array of activity events of the specified type for the session |
 | `GET` | `/api/sessions/<sessionId>/activities/timerange` | Get events by time range for a session | Authentication, Session ID in path, start_time and end_time query parameters, Optional limit and offset parameters | JSON array of activity events within the time range for the session |
 | `POST` | `/api/activities` | Create activity event | Authentication, JSON body with session_id, optional app_id, event_type, event_time, event_data | JSON object of the created activity event |
 | `POST` | `/api/sessions/<sessionId>/activities` | Create activity event for session | Authentication, Session ID in path, JSON body with optional app_id, event_type, event_time, event_data | JSON object of the created activity event |
@@ -153,9 +158,27 @@ These routes handle the relationship between users, roles, and disciplines in a 
 | `DELETE` | `/api/user-role-disciplines/<id>` | Delete assignment | Authentication, Assignment ID in path | JSON object with success status {'success': true} |
 | `POST` | `/api/user-role-disciplines/check` | Check if a user has a role in a discipline | Authentication, JSON body with user_id (UUID), role_id (UUID), discipline_id (UUID) | JSON object with check result {'user_id': '...', 'role_id': '...', 'discipline_id': '...', 'has_assignment': true/false} |
 
+## Batch Operation Routes
+
+These routes handle batch operations for submitting multiple data points in a single request.
+
+| Method | Path | Description | Inputs | Outputs |
+|--------|------|-------------|--------|---------|
+| `POST` | `/api/batch` | Process batch data | Authentication, JSON body with session_id, optional activity_events, app_usages, system_metrics, session_events arrays | JSON object with processing results containing success status and counts of processed items |
+| `POST` | `/api/sessions/<sessionId>/batch` | Process batch data for a specific session | Authentication, Session ID in path, JSON body with optional activity_events, app_usages, system_metrics, session_events arrays | JSON object with processing results containing success status and counts of processed items |
+
+## Server Status Routes
+
+These routes provide information about the server status and health.
+
+| Method | Path | Description | Inputs | Outputs |
+|--------|------|-------------|--------|---------|
+| `GET` | `/api/status/ping` | Simple ping check | None | JSON object with status "ok", message "pong", and timestamp |
+| `GET` | `/api/status/health` | Detailed health check | Authentication | JSON object with detailed system health information including status, server time, uptime, system info, version, and build date |
+| `GET` | `/api/status/version` | Version information | None | JSON object with version, build date, Qt version, and server time |
+
 ### Notes:
 - All UUIDs are expected without braces, e.g., "550e8400-e29b-41d4-a716-446655440000"
 - The system checks for existing assignments before creating new ones to avoid duplicates
 - Creation timestamps and user information are automatically added to all new assignments
-- The check endpoint is useful for permission validation without having to retrieve and process all assignmentstype/<eventType>` | Get events by type for a session | Authentication, Session ID in path, Event type in path, Optional limit and offset parameters | JSON array of activity events of the specified type for the session |
-| `GET` | `/api/sessions/<sessionId>/activities/
+- The check endpoint is useful for permission validation without having to retrieve and process all assignments
