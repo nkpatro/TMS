@@ -36,6 +36,16 @@ public:
     // Get session for a user/machine for a specific day
     QSharedPointer<SessionModel> getSessionForDay(const QUuid& userId, const QUuid& machineId, const QDate& date);
 
+    // Create or reuse session with transaction support
+    QSharedPointer<SessionModel> createOrReuseSessionWithTransaction(
+        const QUuid& userId,
+        const QUuid& machineId,
+        const QDateTime& currentDateTime,
+        const QHostAddress& ipAddress,
+        const QJsonObject& sessionData,
+        bool isRemote = false,
+        const QString& terminalSessionId = QString());
+
 protected:
     // Required BaseRepository abstract method implementations
     QString getEntityName() const override;

@@ -27,6 +27,8 @@
 // Model creation from database query results
 //------------------------------------------------------------------------------
 
+QUuid ModelFactory::s_defaultCreatedBy;
+
 UserModel* ModelFactory::createUserFromQuery(const QSqlQuery& query) {
     UserModel* user = new UserModel();
 
@@ -787,7 +789,7 @@ bool ModelFactory::validateUserRoleDisciplineModel(const UserRoleDisciplineModel
 // Timestamp management
 //------------------------------------------------------------------------------
 
-void ModelFactory::setCreationTimestamps(QObject* model, const QUuid& userId) {
+void ModelFactory::setCreationTimestamps(QObject* model, const QUuid& createdBy) {
     QDateTime now = QDateTime::currentDateTimeUtc();
 
     // Use introspection to set timestamps if the model has these properties
@@ -805,6 +807,10 @@ void ModelFactory::setCreationTimestamps(QObject* model, const QUuid& userId) {
         model->setProperty("updatedAt", now);
     }
 
+    // Use provided user ID, or fall back to default
+    QUuid userId = createdBy.isNull() ? s_defaultCreatedBy : createdBy;
+    LOG_DEBUG(QString("Default Admin UserId: %1").arg(userId.toString()));
+
     // Set created_by if userId is provided
     if (!userId.isNull()) {
         int createdByIndex = metaObject->indexOfProperty("createdBy");
@@ -820,7 +826,7 @@ void ModelFactory::setCreationTimestamps(QObject* model, const QUuid& userId) {
     }
 }
 
-void ModelFactory::setUpdateTimestamps(QObject* model, const QUuid& userId) {
+void ModelFactory::setUpdateTimestamps(QObject* model, const QUuid& updatedBy) {
     QDateTime now = QDateTime::currentDateTimeUtc();
 
     const QMetaObject* metaObject = model->metaObject();
@@ -830,6 +836,9 @@ void ModelFactory::setUpdateTimestamps(QObject* model, const QUuid& userId) {
     if (updatedAtIndex != -1) {
         model->setProperty("updatedAt", now);
     }
+
+    // Use provided user ID, or fall back to default
+    QUuid userId = updatedBy.isNull() ? s_defaultCreatedBy : updatedBy;
 
     // Set updated_by if userId is provided
     if (!userId.isNull()) {
@@ -1326,3 +1335,13 @@ QJsonObject ModelFactory::modelToJson(const MachineModel* model) {
     json["active"] = model->active();
     return json;
 }
+
+void ModelFactory::setDefaultCreatedBy(const QUuid& userId) {
+    LOG_DEBUG(QString("Setting default created_by user ID: %1").arg(userId.toString()));
+    s_defaultCreatedBy = userId;
+}
+
+QUuid ModelFactory::getDefaultCreatedBy() {
+    return s_defaultCreatedBy;
+}
+

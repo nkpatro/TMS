@@ -78,8 +78,8 @@ public:
     static bool validateUserRoleDisciplineModel(const UserRoleDisciplineModel* model, QStringList& errors);
 
     // Timestamp management
-    static void setCreationTimestamps(QObject* model, const QUuid& userId = QUuid());
-    static void setUpdateTimestamps(QObject* model, const QUuid& userId = QUuid());
+    static void setCreationTimestamps(QObject* model, const QUuid& createdBy = QUuid());
+    static void setUpdateTimestamps(QObject* model, const QUuid& updatedBy = QUuid());
 
     // JSON conversion utilities
     static QJsonObject modelToJson(const UserModel* model);
@@ -108,7 +108,15 @@ public:
     static QJsonArray modelsToJsonArray(const QList<QSharedPointer<SessionEventModel>>& models);
     static QJsonArray modelsToJsonArray(const QList<QSharedPointer<UserRoleDisciplineModel>>& models);
 
+    // Set a default user ID to use when no specific user is provided
+    static void setDefaultCreatedBy(const QUuid& userId);
+
+    // Get the default user ID
+    static QUuid getDefaultCreatedBy();
+
 private:
+    static QUuid s_defaultCreatedBy;
+
     // Helper method to set common base model fields
     template<typename T>
     static void setBaseModelFields(T* model, const QSqlQuery& query);

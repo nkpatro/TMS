@@ -388,9 +388,6 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             return Http::Response::badRequest("Invalid JSON data");
         }
 
-        // Log the parsed JSON
-        LOG_DEBUG(QString("Extracted JSON: %1").arg(QString::fromUtf8(QJsonDocument(json).toJson())));
-
         // Extract username from the request data or user data
         QString username;
         if (json.contains("username") && !json["username"].toString().isEmpty()) {
@@ -445,181 +442,48 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             }
         }
 
-        // NEW CODE - Check for and end any existing active sessions for this user/machine
-        if (hasOverlappingSession(user->id(), machineId)) {
-            LOG_INFO(QString("Found overlapping active session for user %1 on machine %2, ending it before creating a new one")
-                .arg(user->name(), machineId.toString()));
-
-            // End all active sessions for this user/machine
-            bool endSuccess = endAllActiveSessions(user->id(), machineId);
-            if (!endSuccess) {
-                LOG_ERROR(QString("Failed to end existing active sessions for user %1 on machine %2")
-                    .arg(user->name(), machineId.toString()));
-                return createErrorResponse("Failed to end existing active sessions",
-                    QHttpServerResponder::StatusCode::InternalServerError);
-            }
-        }
-
         // Get current date and time
         QDateTime currentDateTime = QDateTime::currentDateTimeUtc();
-        QDate currentDate = currentDateTime.date();
 
-        // Find any session for today for this user/machine
-        auto todaySession = m_repository->getSessionForDay(user->id(), machineId, currentDate);
-
-        // Check if we found a session for today
-        if (todaySession) {
-            SessionModel* session = todaySession.data();
-
-            if (!session->loginTime().isValid()) {
-                LOG_WARNING(QString("Session found with invalid login time: %1. Fixing it.").arg(session->id().toString()));
-                session->setLoginTime(currentDateTime.addSecs(-3600)); // Set to 1 hour ago
-                session->setUpdatedAt(currentDateTime);
-                session->setUpdatedBy(user->id());
-
-                bool updateSuccess = m_repository->update(session);
-                if (!updateSuccess) {
-                    LOG_ERROR(QString("Failed to update login time for session: %1").arg(session->id().toString()));
-                    // Continue anyway, as we'll either use or close this session
-                }
-            }
-
-            if (session->logoutTime().isValid()) {
-                // Session was closed (user logged out) - reopen it
-                LOG_INFO(QString("Reopening closed session for today: %1").arg(session->id().toString()));
-
-                // Clear the logout time to reactivate the session
-                session->setLogoutTime(QDateTime()); // Set to invalid/null
-                session->setUpdatedAt(currentDateTime);
-                session->setUpdatedBy(user->id());
-
-                bool updateSuccess = m_repository->update(session);
-
-                if (updateSuccess) {
-                    // Create a login session event to track this session reopening
-                    if (m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
-                        SessionEventModel* event = new SessionEventModel();
-                        event->setSessionId(session->id());
-                        event->setEventType(EventTypes::SessionEventType::Login);
-                        event->setEventTime(currentDateTime);
-                        event->setUserId(user->id());
-                        event->setMachineId(machineId);
-                        event->setIsRemote(json.contains("is_remote") ? json["is_remote"].toBool() : false);
-
-                        if (json.contains("terminal_session_id") && !json["terminal_session_id"].toString().isEmpty()) {
-                            event->setTerminalSessionId(json["terminal_session_id"].toString());
-                        }
-
-                        // Set metadata
-                        event->setCreatedBy(user->id());
-                        event->setUpdatedBy(user->id());
-                        event->setCreatedAt(currentDateTime);
-                        event->setUpdatedAt(currentDateTime);
-
-                        bool eventSuccess = m_sessionEventRepository->save(event);
-
-                        if (eventSuccess) {
-                            LOG_INFO(QString("Login event recorded for reopened session: %1").arg(session->id().toString()));
-                        }
-                        else {
-                            LOG_WARNING(QString("Failed to record login event for reopened session: %1").arg(session->id().toString()));
-                        }
-
-                        delete event;
-                    }
-                    else {
-                        LOG_WARNING("Session event repository not available - login event not recorded");
-                    }
-
-                    LOG_INFO(QString("Session reopened successfully: %1").arg(session->id().toString()));
-                    return createSuccessResponse(sessionToJson(session));
-                }
-                else {
-                    LOG_ERROR(QString("Failed to reopen session: %1").arg(session->id().toString()));
-                    // Fall through to create a new session
-                }
-            }
-            else {
-                // Session is already active - just use it
-                LOG_INFO(QString("Using existing active session for today: %1").arg(session->id().toString()));
-
-                // Create a login session event to track this re-connection
-                if (m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
-                    SessionEventModel* event = new SessionEventModel();
-                    event->setSessionId(session->id());
-                    event->setEventType(EventTypes::SessionEventType::Login);
-                    event->setEventTime(currentDateTime);
-                    event->setUserId(user->id());
-                    event->setMachineId(machineId);
-                    event->setIsRemote(json.contains("is_remote") ? json["is_remote"].toBool() : false);
-
-                    if (json.contains("terminal_session_id") && !json["terminal_session_id"].toString().isEmpty()) {
-                        event->setTerminalSessionId(json["terminal_session_id"].toString());
-                    }
-
-                    // Set metadata
-                    event->setCreatedBy(user->id());
-                    event->setUpdatedBy(user->id());
-                    event->setCreatedAt(currentDateTime);
-                    event->setUpdatedAt(currentDateTime);
-
-                    bool eventSuccess = m_sessionEventRepository->save(event);
-
-                    if (eventSuccess) {
-                        LOG_INFO(QString("Login event recorded for existing session: %1").arg(session->id().toString()));
-                    }
-                    else {
-                        LOG_WARNING(QString("Failed to record login event for existing session: %1").arg(session->id().toString()));
-                    }
-
-                    delete event;
-                }
-                else {
-                    LOG_WARNING("Session event repository not available - login event not recorded");
-                }
-
-                return createSuccessResponse(sessionToJson(session));
-            }
-        }
-
-        // No session for today or reopen failed - create a new one
-        SessionModel* session = new SessionModel();
-        session->setId(QUuid::createUuid());
-        session->setUserId(user->id());
-        session->setLoginTime(currentDateTime);
-        session->setMachineId(machineId);
-
-        // Set IP address
+        // Process IP address
+        QHostAddress ipAddress;
         if (json.contains("ip_address") && !json["ip_address"].toString().isEmpty()) {
-            session->setIpAddress(QHostAddress(json["ip_address"].toString()));
-        }
-        else {
+            ipAddress = QHostAddress(json["ip_address"].toString());
+        } else {
             // Try to get from request
-            QString ipAddress = request.remoteAddress().toString();
-            session->setIpAddress(QHostAddress(ipAddress));
+            ipAddress = QHostAddress(request.remoteAddress().toString());
         }
 
-        // Set session data if provided
+        // Extract session data if provided
+        QJsonObject sessionData;
         if (json.contains("session_data") && json["session_data"].isObject()) {
-            session->setSessionData(json["session_data"].toObject());
+            sessionData = json["session_data"].toObject();
         }
 
-        // Set metadata
-        session->setCreatedBy(user->id());
-        session->setUpdatedBy(user->id());
-        session->setCreatedAt(currentDateTime);
-        session->setUpdatedAt(currentDateTime);
+        // Get optional parameters
+        bool isRemote = json.contains("is_remote") ? json["is_remote"].toBool() : false;
+        QString terminalSessionId;
+        if (json.contains("terminal_session_id") && !json["terminal_session_id"].toString().isEmpty()) {
+            terminalSessionId = json["terminal_session_id"].toString();
+        }
 
-        // Save the session
-        bool success = m_repository->save(session);
+        // Use the repository to create or reuse a session, all in one transaction
+        auto session = m_repository->createOrReuseSessionWithTransaction(
+            user->id(),
+            machineId,
+            currentDateTime,
+            ipAddress,
+            sessionData,
+            isRemote,
+            terminalSessionId
+        );
 
-        if (!success) {
-            LOG_ERROR("Failed to create new session");
-            delete session;
+        if (!session) {
+            LOG_ERROR("Failed to create or reuse session");
             return createErrorResponse("Failed to create session", QHttpServerResponder::StatusCode::InternalServerError);
         }
 
-        // Create a login session event to track this new session
+        // Create a login event if we have an event repository
         if (m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
             SessionEventModel* event = new SessionEventModel();
             event->setSessionId(session->id());
@@ -627,10 +491,10 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             event->setEventTime(currentDateTime);
             event->setUserId(user->id());
             event->setMachineId(machineId);
-            event->setIsRemote(json.contains("is_remote") ? json["is_remote"].toBool() : false);
+            event->setIsRemote(isRemote);
 
-            if (json.contains("terminal_session_id") && !json["terminal_session_id"].toString().isEmpty()) {
-                event->setTerminalSessionId(json["terminal_session_id"].toString());
+            if (!terminalSessionId.isEmpty()) {
+                event->setTerminalSessionId(terminalSessionId);
             }
 
             // Set metadata
@@ -640,26 +504,26 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             event->setUpdatedAt(currentDateTime);
 
             bool eventSuccess = m_sessionEventRepository->save(event);
-
-            if (eventSuccess) {
-                LOG_INFO(QString("Login event recorded for new session: %1").arg(session->id().toString()));
+            if (!eventSuccess) {
+                LOG_WARNING(QString("Failed to record login event for session: %1").arg(session->id().toString()));
+                // Continue since this is not critical
+            } else {
+                LOG_INFO(QString("Login event recorded for session: %1").arg(session->id().toString()));
             }
-            else {
-                LOG_WARNING(QString("Failed to record login event for new session: %1").arg(session->id().toString()));
-            }
-
             delete event;
         }
-        else {
-            LOG_WARNING("Session event repository not available - login event not recorded");
-        }
 
-        QJsonObject response = sessionToJson(session);
-        LOG_INFO(QString("New session created successfully: %1").arg(session->id().toString()));
-        delete session;
+        // Determine if this is a new session or an existing one for status code
+        bool isNewSession = (session->createdAt().secsTo(currentDateTime) < 5);
+        QHttpServerResponder::StatusCode statusCode = isNewSession ?
+            QHttpServerResponder::StatusCode::Created :
+            QHttpServerResponder::StatusCode::Ok;
 
-        // Return created response with 201 status code
-        return createSuccessResponse(response, QHttpServerResponder::StatusCode::Created);
+        LOG_INFO(QString("%1 session %2 for user %3 on machine %4")
+            .arg(isNewSession ? "Created new" : "Using existing")
+            .arg(session->id().toString(), user->name(), machineId.toString()));
+
+        return createSuccessResponse(sessionToJson(session.data()), statusCode);
     }
     catch (const std::exception& e) {
         LOG_ERROR(QString("Exception creating session: %1").arg(e.what()));
@@ -798,6 +662,10 @@ QHttpServerResponse SessionController::handleGetActiveSession(const QHttpServerR
 
     try {
         QUuid userId = QUuid(userData["id"].toString());
+        LOG_DEBUG(userId.toString());
+        bool ok;
+        QJsonObject json = extractJsonFromRequest(request, ok);
+        LOG_DEBUG(QString("Parsed JSON: %1").arg(QString::fromUtf8(QJsonDocument(json).toJson())));
 
         // Get machine ID from query parameters if provided
         QUrlQuery query(request.url().query());

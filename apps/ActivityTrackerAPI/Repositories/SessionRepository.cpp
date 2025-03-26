@@ -877,3 +877,134 @@ QSharedPointer<SessionModel> SessionRepository::getSessionForDay(const QUuid& us
     return result;
 }
 
+QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransaction(
+    const QUuid& userId,
+    const QUuid& machineId,
+    const QDateTime& currentDateTime,
+    const QHostAddress& ipAddress,
+    const QJsonObject& sessionData,
+    bool isRemote,
+    const QString& terminalSessionId)
+{
+    LOG_DEBUG(QString("Creating or reusing session for user %1 on machine %2")
+        .arg(userId.toString(), machineId.toString()));
+
+    if (!isInitialized()) {
+        LOG_ERROR("Cannot create session: Repository not initialized");
+        return nullptr;
+    }
+
+    QSharedPointer<SessionModel> resultSession;
+
+    bool success = executeInTransaction([&]() {
+        // Check for active sessions by directly getting them from repository methods
+        QList<QSharedPointer<SessionModel>> activeSessions = getActiveSessions();
+
+        // Filter to find sessions for the specific user and machine
+        QUuid lastActiveSessionId;
+
+        for (const auto& session : activeSessions) {
+            if (session->userId() == userId && session->machineId() == machineId) {
+                lastActiveSessionId = session->id();
+
+                // End the session
+                session->setLogoutTime(currentDateTime);
+                session->setUpdatedAt(currentDateTime);
+                session->setUpdatedBy(userId);
+
+                bool updateSuccess = update(session.data());
+                if (!updateSuccess) {
+                    LOG_ERROR(QString("Failed to end existing session: %1").arg(session->id().toString()));
+                    return false;
+                }
+
+                LOG_INFO(QString("Ended active session: %1 for user %2 on machine %3")
+                    .arg(session->id().toString(), userId.toString(), machineId.toString()));
+            }
+        }
+
+        // 2. Check for a session created today that might be closed
+        QDate currentDate = currentDateTime.date();
+        auto todaySession = getSessionForDay(userId, machineId, currentDate);
+
+        // 3. Create a new session or reopen today's session
+        if (todaySession && todaySession->logoutTime().isValid()) {
+            // Today's session exists but is closed - reopen it
+            LOG_INFO(QString("Reopening closed session for today: %1").arg(todaySession->id().toString()));
+
+            // Clear the logout time to reactivate the session
+            todaySession->setLogoutTime(QDateTime()); // Set to invalid/null
+            todaySession->setUpdatedAt(currentDateTime);
+            todaySession->setUpdatedBy(userId);
+
+            bool updateSuccess = update(todaySession.data());
+            if (!updateSuccess) {
+                LOG_ERROR(QString("Failed to reopen session: %1").arg(todaySession->id().toString()));
+                return false;
+            }
+
+            resultSession = todaySession;
+        }
+        else if (todaySession && !todaySession->logoutTime().isValid()) {
+            // Today's session exists and is active - just use it
+            LOG_INFO(QString("Using existing active session for today: %1").arg(todaySession->id().toString()));
+            resultSession = todaySession;
+        }
+        else {
+            // No session for today - create a new one
+            LOG_INFO("Creating new session");
+            SessionModel* newSession = new SessionModel();
+            newSession->setId(QUuid::createUuid());
+            newSession->setUserId(userId);
+            newSession->setLoginTime(currentDateTime);
+            newSession->setMachineId(machineId);
+            newSession->setIpAddress(ipAddress);
+            newSession->setSessionData(sessionData);
+
+            // Set session continuity information if there was a previous session
+            if (!lastActiveSessionId.isNull()) {
+                auto lastSession = getById(lastActiveSessionId);
+                if (lastSession) {
+                    newSession->setContinuedFromSession(lastActiveSessionId);
+                    newSession->setPreviousSessionEndTime(lastSession->logoutTime());
+                    newSession->setTimeSincePreviousSession(
+                        lastSession->logoutTime().secsTo(currentDateTime));
+
+                    // Update the previous session to link to this one
+                    lastSession->setContinuedBySession(newSession->id());
+                    if (!update(lastSession.data())) {
+                        LOG_ERROR(QString("Failed to update continuity link in previous session: %1")
+                            .arg(lastSession->id().toString()));
+                        delete newSession;
+                        return false;
+                    }
+                }
+            }
+
+            // Set metadata
+            newSession->setCreatedBy(userId);
+            newSession->setUpdatedBy(userId);
+            newSession->setCreatedAt(currentDateTime);
+            newSession->setUpdatedAt(currentDateTime);
+
+            // Save the session
+            if (!save(newSession)) {
+                LOG_ERROR("Failed to save new session");
+                delete newSession;
+                return false;
+            }
+
+            resultSession = QSharedPointer<SessionModel>(newSession);
+        }
+
+        return true;
+    });
+
+    if (!success) {
+        LOG_ERROR("Transaction failed during session creation/reuse");
+        return nullptr;
+    }
+
+    return resultSession;
+}
+

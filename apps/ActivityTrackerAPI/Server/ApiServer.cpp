@@ -330,6 +330,16 @@ void ApiServer::setupControllers()
         m_server.registerController(m_batchController);
         m_server.registerController(m_serverStatusController);
 
+        QUuid adminUserId;
+        if (m_authController) {
+            adminUserId = m_authController->createDefaultAdminUser();
+            LOG_INFO(QString("Default admin user setup %1")
+                .arg(adminUserId.isNull() ? "failed" : "completed successfully"));
+        }
+
+        // Store the admin user ID in ModelFactory for use in default creation
+        ModelFactory::setDefaultCreatedBy(adminUserId);
+
         LOG_INFO("Controllers setup completed successfully");
     }
     catch (const std::exception& ex) {

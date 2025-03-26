@@ -630,3 +630,81 @@ QJsonObject AuthController::userToJson(UserModel *user) const
 
     return json;
 }
+
+QUuid AuthController::createDefaultAdminUser() {
+    LOG_INFO("Attempting to create default admin user");
+
+    try {
+        // Check if a repository is available
+        if (!m_repository) {
+            LOG_ERROR("User repository not available for default admin creation");
+            return QUuid();
+        }
+
+        // Default admin credentials
+        QString defaultUsername = "admin";
+        QString defaultEmail = "admin@redefine.co";
+        QString defaultPassword = "AdminRedefine2024!";
+
+        // First, check if a user with this username or email already exists
+        auto existingUser = m_repository->getByName(defaultUsername);
+        if (!existingUser) {
+            existingUser = m_repository->getByEmail(defaultEmail);
+        }
+
+        // If user already exists, return its ID
+        if (existingUser) {
+            LOG_INFO(QString("Default admin user already exists: %1").arg(existingUser->name()));
+            return existingUser->id();
+        }
+
+        // Create new admin user
+        UserModel* adminUser = new UserModel();
+        adminUser->setName(defaultUsername);
+        adminUser->setEmail(defaultEmail);
+
+        // Hash the password securely
+        QByteArray hashedPassword = QCryptographicHash::hash(
+            defaultPassword.toUtf8(),
+            QCryptographicHash::Sha256
+        ).toHex();
+        adminUser->setPassword(hashedPassword);
+
+        // Set admin-specific attributes
+        adminUser->setActive(true);
+        adminUser->setVerified(true);
+
+        // Set metadata
+        QDateTime now = QDateTime::currentDateTimeUtc();
+        adminUser->setCreatedAt(now);
+        adminUser->setUpdatedAt(now);
+
+        // Save the user
+        bool success = m_repository->save(adminUser);
+
+        if (success) {
+            QUuid adminUserId = adminUser->id();
+            LOG_INFO("Default admin user created successfully");
+
+            // Log the admin creation as an auth event
+            AuthFramework::instance().logAuthEvent("admin_user_created", QJsonObject{
+                {"username", defaultUsername},
+                {"email", defaultEmail},
+                {"user_id", adminUserId.toString()}
+            });
+
+            delete adminUser;
+            return adminUserId;
+        } else {
+            LOG_ERROR("Failed to create default admin user");
+            delete adminUser;
+            return QUuid();
+        }
+    }
+    catch (const std::exception &e) {
+        LOG_ERROR(QString("Exception creating default admin user: %1").arg(e.what()));
+        return QUuid();
+    }
+}
+
+

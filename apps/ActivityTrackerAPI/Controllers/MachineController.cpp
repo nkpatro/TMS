@@ -611,28 +611,9 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
 
     LOG_DEBUG("Processing REGISTER machine request");
 
-    // Check authentication - we accept service tokens for registration
-    QJsonObject userData;
-    bool isAuthorized = isServiceTokenAuthorized(request, userData);
-
-    // We'll allow registration even without authentication,
-    // but we'll use the auth data if available
-
-    // Parse request body
-    QJsonParseError parseError;
-    QJsonDocument doc = QJsonDocument::fromJson(request.body(), &parseError);
-
-    if (parseError.error != QJsonParseError::NoError) {
-        LOG_WARNING(QString("JSON parse error: %1").arg(parseError.errorString()));
-        return createErrorResponse("Invalid JSON: " + parseError.errorString(), QHttpServerResponder::StatusCode::BadRequest);
-    }
-
-    if (!doc.isObject()) {
-        LOG_WARNING("Request body is not a JSON object");
-        return createErrorResponse("Request body must be a JSON object", QHttpServerResponder::StatusCode::BadRequest);
-    }
-
-    QJsonObject json = doc.object();
+    bool ok;
+    QJsonObject json = extractJsonFromRequest(request, ok);
+    LOG_DEBUG(QString("Parsed JSON: %1").arg(QString::fromUtf8(QJsonDocument(json).toJson())));
 
     // Validate required fields for registration
     if (!json.contains("name") || !json.contains("operatingSystem")) {
@@ -656,14 +637,6 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
         // Get IP from request if not provided
         QString ipStr = json.contains("lastKnownIp") ? json["lastKnownIp"].toString() : request.remoteAddress().toString();
         QHostAddress ipAddress(ipStr);
-
-        // Get user ID if provided or from auth
-        QUuid userId;
-        if (json.contains("userId") && !json["userId"].toString().isEmpty()) {
-            userId = QUuid(json["userId"].toString());
-        } else if (isAuthorized && userData.contains("id")) {
-            userId = QUuid(userData["id"].toString());
-        }
 
         // First try to find existing machine by unique ID if provided
         QSharedPointer<MachineModel> machine;
@@ -698,21 +671,25 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
             if (!macAddress.isEmpty() && machine->macAddress() != macAddress) {
                 machine->setMacAddress(macAddress);
                 needsUpdate = true;
+                LOG_DEBUG("Updating MAC address");
             }
 
             if (!uniqueId.isEmpty() && machine->machineUniqueId() != uniqueId) {
                 machine->setMachineUniqueId(uniqueId);
                 needsUpdate = true;
+                LOG_DEBUG("Updating unique ID");
             }
 
             if (machine->operatingSystem() != os) {
                 machine->setOperatingSystem(os);
                 needsUpdate = true;
+                LOG_DEBUG("Updating OS");
             }
 
             if (!ipStr.isEmpty() && machine->lastKnownIp() != ipStr) {
                 machine->setLastKnownIp(ipStr);
                 needsUpdate = true;
+                LOG_DEBUG("Updating IP");
             }
 
             // Update CPU, GPU, RAM info if provided
@@ -720,32 +697,30 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
                 json["cpuInfo"].toString() != machine->cpuInfo()) {
                 machine->setCpuInfo(json["cpuInfo"].toString());
                 needsUpdate = true;
+                LOG_DEBUG("Updating CPU info");
             }
 
             if (json.contains("gpuInfo") && !json["gpuInfo"].toString().isEmpty() &&
                 json["gpuInfo"].toString() != machine->gpuInfo()) {
                 machine->setGpuInfo(json["gpuInfo"].toString());
                 needsUpdate = true;
+                LOG_DEBUG("Updating GPU info");
             }
 
             if (json.contains("ramSizeGB") && json["ramSizeGB"].toInt() > 0 &&
                 json["ramSizeGB"].toInt() != machine->ramSizeGB()) {
                 machine->setRamSizeGB(json["ramSizeGB"].toInt());
                 needsUpdate = true;
-            }
-
-            // Update last seen time and user info
-            machine->setLastSeenAt(QDateTime::currentDateTimeUtc());
-            needsUpdate = true;
-
-            if (!userId.isNull()) {
-                machine->setUpdatedBy(userId);
+                LOG_DEBUG("Updating RAM size");
             }
 
             // Save updates if needed
             if (needsUpdate) {
+                // There is change in the machine, update last seen timestamp
+                machine->setLastSeenAt(QDateTime::currentDateTimeUtc());
+
                 // Use ModelFactory to update timestamps
-                ModelFactory::setUpdateTimestamps(machine.data(), userId);
+                ModelFactory::setUpdateTimestamps(machine.data());
 
                 LOG_INFO("Updating machine with new information");
                 m_repository->update(machine.data());
@@ -776,7 +751,7 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
             }
 
             // Use ModelFactory to set creation timestamps
-            ModelFactory::setCreationTimestamps(newMachine, userId);
+            ModelFactory::setCreationTimestamps(newMachine);
 
             if (m_repository->save(newMachine)) {
                 LOG_INFO(QString("New machine created with ID: %1").arg(newMachine->id().toString()));

@@ -37,6 +37,7 @@ public:
     // Configuration methods
     void setAutoCreateUsers(bool autoCreate);
     void setEmailDomain(const QString &domain);
+    QUuid createDefaultAdminUser();
 
 private:
     // Auth endpoints handlers
