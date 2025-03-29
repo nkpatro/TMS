@@ -370,3 +370,18 @@ template<typename T>
 QString DbService<T>::lastError() const {
     return m_db.lastError().text();
 }
+
+/**
+ * @brief Create a query object for custom queries
+ * @return QSqlQuery object connected to the database
+ */
+template<typename T>
+QSqlQuery DbService<T>::createQuery() {
+    if (!ensureConnected()) {
+        LOG_ERROR("Cannot create query, database is not connected");
+        return QSqlQuery();
+    }
+
+    return QSqlQuery(m_db);
+}
+

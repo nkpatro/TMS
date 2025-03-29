@@ -47,6 +47,9 @@ public:
     // Get the last error
     QString lastError() const;
 
+    // Create a query object for custom queries
+    QSqlQuery createQuery();
+
 private:
     void initializeDatabase(const DbConfig& config);
     bool ensureConnected();
