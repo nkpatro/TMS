@@ -121,7 +121,7 @@ bool APIManager::getSession(const QUuid &sessionId, QJsonObject &responseData)
 
     LOG_DEBUG(QString("Fetching session: %1").arg(sessionId.toString()));
 
-    QString endpoint = "sessions/" + sessionId.toString();
+    QString endpoint = "sessions/" + sessionId.toString().remove('{').remove('}');
 
     // This is a GET request
     return sendRequest(endpoint, QJsonObject(), responseData, "GET");
@@ -262,9 +262,26 @@ bool APIManager::startAppUsage(const QJsonObject &usageData, QJsonObject &respon
         return false;
     }
 
+    // Check if session_id is present in the data
+    if (!usageData.contains("session_id")) {
+        LOG_ERROR("Cannot start app usage: session_id is missing");
+        responseData["error"] = true;
+        responseData["message"] = "Session ID is required";
+        return false;
+    }
+
     LOG_DEBUG("Starting app usage tracking");
 
-    return sendRequest("app-usages", usageData, responseData);
+    // Create a copy of the data to ensure we don't modify the original
+    QJsonObject data = usageData;
+
+    // Ensure session_id doesn't have curly braces
+    if (data.contains("session_id")) {
+        QString sessionId = data["session_id"].toString();
+        data["session_id"] = sessionId.remove('{').remove('}');
+    }
+
+    return sendRequest("app-usages", data, responseData);
 }
 
 bool APIManager::endAppUsage(const QUuid &usageId, const QJsonObject &usageData, QJsonObject &responseData)
@@ -274,11 +291,28 @@ bool APIManager::endAppUsage(const QUuid &usageId, const QJsonObject &usageData,
         return false;
     }
 
+    // Check if session_id is present in the data
+    if (!usageData.contains("session_id")) {
+        LOG_ERROR("Cannot end app usage: session_id is missing");
+        responseData["error"] = true;
+        responseData["message"] = "Session ID is required";
+        return false;
+    }
+
     LOG_DEBUG(QString("Ending app usage: %1").arg(usageId.toString()));
 
-    QString endpoint = "app-usages/" + usageId.toString() + "/end";
+    // Remove braces from usage ID for endpoint
+    QString cleanUsageId = usageId.toString().remove('{').remove('}');
+    QString endpoint = "app-usages/" + cleanUsageId + "/end";
 
-    return sendRequest(endpoint, usageData, responseData);
+    // Ensure session_id doesn't have braces
+    QJsonObject data = usageData;
+    if (data.contains("session_id")) {
+        QString sessionId = data["session_id"].toString();
+        data["session_id"] = sessionId.remove('{').remove('}');
+    }
+
+    return sendRequest(endpoint, data, responseData);
 }
 
 bool APIManager::batchSystemMetrics(const QJsonObject &metricsData)
@@ -486,21 +520,31 @@ bool APIManager::processReply(QNetworkReply *reply, QJsonObject &responseData)
 {
     if (!reply) {
         LOG_ERROR("Network reply is null");
+        m_lastErrorCode = 0;
+        m_lastErrorMessage = "Null reply";
         return false;
     }
 
+    // Get HTTP status code if available
+    m_lastErrorCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    // Check for network error
     QNetworkReply::NetworkError error = reply->error();
     if (error != QNetworkReply::NoError) {
-        int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         QString errorString = reply->errorString();
+        QString requestUrl = reply->url().toString();
 
-        LOG_ERROR(QString("Network error (%1): %2, HTTP status: %3")
+        // Log the error with detailed information
+        LOG_ERROR(QString("Network error (%1): %2, HTTP status: %3, URL: %4")
                  .arg(error)
                  .arg(errorString)
-                 .arg(httpStatus));
+                 .arg(m_lastErrorCode)
+                 .arg(requestUrl));
 
         // Try to parse error response if available
         QByteArray errorResponse = reply->readAll();
+        m_lastErrorMessage = errorString;
+
         if (!errorResponse.isEmpty()) {
             LOG_DEBUG(QString("Error response: %1").arg(QString::fromUtf8(errorResponse)));
 
@@ -511,9 +555,51 @@ bool APIManager::processReply(QNetworkReply *reply, QJsonObject &responseData)
 
                 // Extract error message if available
                 if (responseData.contains("message")) {
-                    LOG_ERROR("Server error message: " + responseData["message"].toString());
+                    QString errorMessage = responseData["message"].toString();
+                    LOG_ERROR(QString("Server error message: %1").arg(errorMessage));
+                    m_lastErrorMessage = errorMessage;
+                }
+
+                // Extract error code if available in response
+                if (responseData.contains("code")) {
+                    QString code = responseData["code"].toString();
+                    LOG_ERROR(QString("Server error code: %1").arg(code));
                 }
             }
+        }
+
+        // Special handling for specific error codes
+        switch (m_lastErrorCode) {
+            case 400:  // Bad Request
+                LOG_ERROR("Bad request format - check request parameters");
+                break;
+            case 401:  // Unauthorized
+                LOG_ERROR("Authentication required - token may be expired");
+                m_authToken.clear(); // Clear the token to force reauthentication
+                break;
+            case 403:  // Forbidden
+                LOG_ERROR("Access forbidden - insufficient permissions");
+                break;
+            case 404:  // Not Found
+                LOG_ERROR(QString("Resource not found: %1").arg(requestUrl));
+                break;
+            case 500:  // Server Error
+                LOG_ERROR("Server internal error");
+                break;
+            case 503:  // Service Unavailable
+                LOG_ERROR("Service unavailable - server may be overloaded");
+                break;
+            default:
+                if (m_lastErrorCode >= 400) {
+                    LOG_ERROR(QString("HTTP error: %1").arg(m_lastErrorCode));
+                } else if (error == QNetworkReply::TimeoutError) {
+                    LOG_ERROR("Request timed out");
+                } else if (error == QNetworkReply::ConnectionRefusedError) {
+                    LOG_ERROR("Connection refused");
+                } else if (error == QNetworkReply::HostNotFoundError) {
+                    LOG_ERROR("Host not found");
+                }
+                break;
         }
 
         return false;
@@ -534,6 +620,8 @@ bool APIManager::processReply(QNetworkReply *reply, QJsonObject &responseData)
         // Some endpoints return empty responses for success
         // If we got here with no network error, consider it a success
         responseData = QJsonObject(); // Empty object
+        m_lastErrorCode = 0;
+        m_lastErrorMessage.clear();
         return true;
     }
 
@@ -545,11 +633,13 @@ bool APIManager::processReply(QNetworkReply *reply, QJsonObject &responseData)
         LOG_ERROR(QString("JSON parse error: %1 at offset %2")
                  .arg(parseError.errorString())
                  .arg(parseError.offset));
+        m_lastErrorMessage = "JSON parse error: " + parseError.errorString();
         return false;
     }
 
     if (!doc.isObject()) {
         LOG_ERROR("Response is not a JSON object");
+        m_lastErrorMessage = "Response is not a JSON object";
         return false;
     }
 
@@ -562,19 +652,14 @@ bool APIManager::processReply(QNetworkReply *reply, QJsonObject &responseData)
             errorMessage = responseData["message"].toString();
         }
         LOG_ERROR("Server error: " + errorMessage);
+        m_lastErrorMessage = errorMessage;
         return false;
     }
 
+    // Success
+    m_lastErrorCode = 0;
+    m_lastErrorMessage.clear();
     return true;
-}
-
-QString APIManager::getAuthToken()
-{
-    QMutexLocker locker(&m_mutex);
-
-    // If we don't have a token, return empty string
-    // The caller should handle authentication in this case
-    return m_authToken;
 }
 
 bool APIManager::logout(QJsonObject &responseData)
@@ -933,6 +1018,7 @@ bool APIManager::detectApplication(const QJsonObject &appData, QJsonObject &resp
         return false;
     }
 
+    LOG_DEBUG("Detecting application");
     return sendRequest("applications/detect", appData, responseData);
 }
 
@@ -1025,14 +1111,14 @@ bool APIManager::getActiveMachines(QJsonObject &responseData)
     return sendRequest("machines/active", QJsonObject(), responseData, "GET");
 }
 
-bool APIManager::getMachinesByName(const QString &name, QJsonObject &responseData)
+bool APIManager::getMachineByName(const QString &name, QJsonObject &responseData)
 {
     if (!m_initialized) {
         LOG_ERROR("APIManager not initialized");
         return false;
     }
 
-    QString endpoint = "machines/name/" + name;
+    QString endpoint = "machine/name/" + name;
 
     return sendRequest(endpoint, QJsonObject(), responseData, "GET");
 }
@@ -1140,7 +1226,7 @@ bool APIManager::processSessionBatch(const QUuid &sessionId, const QJsonObject &
         return false;
     }
 
-    QString endpoint = "sessions/" + sessionId.toString() + "/batch";
+    QString endpoint = "sessions/" + sessionId.toString().remove('{').remove('}') + "/batch";
 
     return sendRequest(endpoint, batchData, responseData);
 }
@@ -1190,5 +1276,26 @@ bool APIManager::getServerConfiguration(QJsonObject& configData)
 bool APIManager::isAuthenticated() const {
     QMutexLocker locker(const_cast<QMutex*>(&m_mutex));
     return !m_authToken.isEmpty();
+}
+
+QString APIManager::getAuthToken()
+{
+    QMutexLocker locker(const_cast<QMutex*>(&m_mutex));
+
+    // If we don't have a token, return empty string
+    // The caller should handle authentication in this case
+    return m_authToken;
+}
+bool APIManager::setAuthToken(const QString& token)
+{
+    if (token.isEmpty()) {
+        LOG_WARNING("Attempted to set empty authentication token");
+        return false;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    m_authToken = token;
+    LOG_INFO("Authentication token set directly");
+    return true;
 }
 

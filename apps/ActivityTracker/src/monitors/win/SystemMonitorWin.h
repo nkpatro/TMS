@@ -7,6 +7,7 @@
 #include <Windows.h>
 #include <pdh.h>
 #include <psapi.h>
+#include <QMap>
 
 class SystemMonitorWin : public SystemMonitor
 {
@@ -41,6 +42,9 @@ private:
     PDH_HCOUNTER m_cpuCounter;
     PDH_HQUERY m_gpuQuery;
     PDH_HCOUNTER m_gpuCounter;
+
+    QMap<DWORD, ULARGE_INTEGER> m_lastProcessTimes;
+    ULARGE_INTEGER m_lastSystemTime;
 
     bool initializePdhCounters();
     void cleanupPdhCounters();

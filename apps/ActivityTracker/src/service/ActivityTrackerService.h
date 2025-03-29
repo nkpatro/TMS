@@ -29,6 +29,7 @@ public:
 private:
     bool loadConfig();
     void setupSignalHandlers();
+    bool authenticateCurrentUser();
 
     ActivityTrackerClient* m_trackerClient;
     MultiUserManager* m_userManager;

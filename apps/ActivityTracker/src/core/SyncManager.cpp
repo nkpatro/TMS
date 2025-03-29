@@ -1,8 +1,12 @@
 #include "SyncManager.h"
+
+#include <QDir>
+
 #include "APIManager.h"
 #include "SessionManager.h"
 #include "logger/logger.h"
 #include <QHostInfo>
+#include <QJsonDocument>
 #include <QSysInfo>
 #include <QNetworkInterface>
 
@@ -321,29 +325,41 @@ bool SyncManager::processPendingQueue(int maxItems)
                 break;
 
             case DataType::AppUsage: {
-                // Handle app usage items individually
-                locker.unlock();
-                bool itemSuccess = false;
+                    // Handle app usage items individually
+                    locker.unlock();
+                    bool itemSuccess = false;
 
-                if (item.data.contains("action") && item.data["action"].toString() == "end") {
-                    // End app usage request
-                    QUuid usageId = QUuid(item.data["usage_id"].toString());
-                    QJsonObject response;
-                    itemSuccess = m_apiManager->endAppUsage(usageId, item.data, response);
-                    emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
-                } else {
-                    // Start app usage request
-                    QJsonObject response;
-                    itemSuccess = m_apiManager->startAppUsage(item.data, response);
-                    emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
-                }
+                    if (item.data.contains("action") && item.data["action"].toString() == "end") {
+                        // End app usage request
+                        QUuid usageId = QUuid(item.data["usage_id"].toString());
 
-                if (!itemSuccess) {
-                    success = false;
-                }
+                        // Ensure session_id is in the data
+                        QJsonObject modifiedData = item.data;
+                        if (!modifiedData.contains("session_id")) {
+                            modifiedData["session_id"] = item.sessionId.toString().remove('{').remove('}');
+                        }
 
-                locker.relock();
-                break;
+                        QJsonObject response;
+                        itemSuccess = m_apiManager->endAppUsage(usageId, modifiedData, response);
+                        emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
+                    } else {
+                        // Start app usage request
+                        QJsonObject modifiedData = item.data;
+                        if (!modifiedData.contains("session_id")) {
+                            modifiedData["session_id"] = item.sessionId.toString().remove('{').remove('}');
+                        }
+
+                        QJsonObject response;
+                        itemSuccess = m_apiManager->startAppUsage(modifiedData, response);
+                        emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
+                    }
+
+                    if (!itemSuccess) {
+                        success = false;
+                    }
+
+                    locker.relock();
+                    break;
             }
 
             case DataType::AfkPeriod: {
@@ -496,34 +512,59 @@ bool SyncManager::sendBatchedData(const QUuid& sessionId, const QJsonArray& sess
         LOG_ERROR("Cannot send batched data with null session ID");
         return false;
     }
-    
+
     if (sessionEvents.isEmpty() && activityEvents.isEmpty() && systemMetrics.isEmpty()) {
         // Nothing to send
         return true;
     }
-    
-    LOG_DEBUG(QString("Sending batched data for session %1").arg(sessionId.toString()));
-    
+
+    // Format the session ID correctly: remove curly braces
+    QString cleanSessionId = sessionId.toString().remove('{').remove('}');
+
+    LOG_DEBUG(QString("Sending batched data for session %1").arg(cleanSessionId));
+
+    // Prepare the batch data with clean session ID
     QJsonObject batchData;
-    batchData["session_id"] = sessionId.toString();
-    
+    batchData["session_id"] = cleanSessionId;
+
     if (!sessionEvents.isEmpty()) {
         batchData["session_events"] = sessionEvents;
     }
-    
+
     if (!activityEvents.isEmpty()) {
         batchData["activity_events"] = activityEvents;
     }
-    
+
     if (!systemMetrics.isEmpty()) {
         batchData["system_metrics"] = systemMetrics;
     }
-    
+
     QJsonObject responseData;
-    bool success = m_apiManager->processSessionBatch(sessionId, batchData, responseData);
-    
-    if (!success) {
-        LOG_ERROR(QString("Failed to send batched data for session %1").arg(sessionId.toString()));
+
+    // Use the general batch endpoint directly instead of trying session-specific endpoint first
+    bool success = m_apiManager->processBatch(batchData, responseData);
+
+    if (success) {
+        LOG_DEBUG(QString("Successfully sent batched data for session %1").arg(cleanSessionId));
+        // Reset consecutive failures counter
+        m_consecutiveFailures = 0;
+    } else {
+        LOG_ERROR(QString("Failed to send batched data for session %1").arg(cleanSessionId));
+
+        // Count consecutive failures for potential fallback to offline mode
+        m_consecutiveFailures++;
+
+        // Check if we should switch to offline mode after multiple failures
+        if (m_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !m_offlineMode) {
+            LOG_WARNING(QString("Switching to offline mode after %1 consecutive failures").arg(m_consecutiveFailures));
+            m_offlineMode = true;
+            emit connectionStateChanged(false);
+        }
+
+        // Store the failed batch for later retry if we have persistence enabled
+        if (m_enablePersistence) {
+            storeFailedBatchForRetry(sessionId, batchData);
+        }
     }
     
     return success;
@@ -543,7 +584,7 @@ bool SyncManager::registerMachine(const QString& hostname, QString& machineId)
     query["hostname"] = hostname;
     QJsonObject machineResponse;
     
-    if (m_apiManager->getMachinesByName(hostname, machineResponse)) {
+    if (m_apiManager->getMachineByName(hostname, machineResponse)) {
         if (machineResponse.contains("machines") && machineResponse["machines"].isArray()) {
             QJsonArray machines = machineResponse["machines"].toArray();
             if (!machines.isEmpty()) {
@@ -619,3 +660,29 @@ bool SyncManager::authenticateUser(const QString& username, const QString& machi
     
     return success;
 }
+
+void SyncManager::storeFailedBatchForRetry(const QUuid& sessionId, const QJsonObject& batchData)
+{
+    if (!m_enablePersistence) return;
+
+    // Create a unique filename based on timestamp
+    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss_zzz");
+    QString filename = QDir::tempPath() + "/activity_tracker_" +
+                      sessionId.toString().remove('{').remove('}') + "_" +
+                      timestamp + ".json";
+
+    // Serialize the batch data to JSON
+    QJsonDocument doc(batchData);
+    QByteArray jsonData = doc.toJson(QJsonDocument::Indented);
+
+    // Write to file
+    QFile file(filename);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(jsonData);
+        file.close();
+        LOG_INFO(QString("Stored failed batch for later retry: %1").arg(filename));
+    } else {
+        LOG_ERROR(QString("Failed to save batch data for retry: %1").arg(file.errorString()));
+    }
+}
+

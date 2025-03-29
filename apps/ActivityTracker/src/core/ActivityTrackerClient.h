@@ -43,6 +43,11 @@ public:
     QDateTime lastSyncTime() const;
     bool isOfflineMode() const;
 
+    APIManager* apiManager() const { return m_apiManager; }
+    bool authenticate(const QString& username, const QString& machineId);
+    bool setAuthToken(const QString& token);
+    void setConfigManager(ConfigManager* configManager);
+
 signals:
     // Status signals
     void statusChanged(const QString& status);
@@ -79,6 +84,8 @@ private slots:
     // Day change handling
     void checkDayChange();
 
+    QString getAppId(const QString &appName, const QString &executablePath);
+
 private:
     // Component managers
     APIManager* m_apiManager;
@@ -105,6 +112,8 @@ private:
 
     // Timers
     QTimer m_dayCheckTimer;
+
+    QString m_currentAppId;
 
     // Helper methods
     bool handleDayChange();

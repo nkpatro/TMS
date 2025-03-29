@@ -9,6 +9,7 @@
 #include "../monitors/SystemMonitor.h"
 
 class ActivityMonitorBatcher;
+class ApplicationCache;
 
 class MonitorManager : public QObject
 {
@@ -30,10 +31,17 @@ public:
     AppMonitor* appMonitor() const { return m_appMonitor; }
     SessionMonitor* sessionMonitor() const { return m_sessionMonitor; }
     SystemMonitor* systemMonitor() const { return m_systemMonitor; }
+    ApplicationCache* appCache() const { return m_appCache; }
+    void setAppCache(ApplicationCache* cache) { m_appCache = cache; }
 
     // Configuration
     void setIdleTimeThreshold(int milliseconds);
     void setHighCpuThreshold(float percentage);
+
+    // Accessor methods for tracking flags
+    bool isTrackingKeyboardMouse() const { return m_trackKeyboardMouse; }
+    bool isTrackingApplications() const { return m_trackApplications; }
+    bool isTrackingSystemMetrics() const { return m_trackSystemMetrics; }
 
     signals:
         // Pass-through signals from monitors to client
@@ -48,6 +56,7 @@ private:
     AppMonitor* m_appMonitor;
     SessionMonitor* m_sessionMonitor;
     SystemMonitor* m_systemMonitor;
+    ApplicationCache* m_appCache;
 
     bool m_isRunning;
     bool m_trackKeyboardMouse;

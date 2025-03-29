@@ -153,6 +153,12 @@ void AppMonitorWin::updateWindowInfo(HWND hwnd)
     QString appPath = getAppPath(hwnd);
     QString appName = getAppName(hwnd);
 
+    // Skip useless window changes - console windows without title, system windows, etc.
+    if (appName.isEmpty() || appPath.isEmpty()) {
+        LOG_DEBUG("Skipping focus change due to empty app name or path");
+        return;
+    }
+
     // Only update and emit signals if there's a real change
     if (m_currentWindow != hwnd ||
         m_currentWindowTitle != windowTitle ||
@@ -178,7 +184,7 @@ void AppMonitorWin::updateWindowInfo(HWND hwnd)
             emit appFocused(m_currentAppName, m_currentWindowTitle, m_currentAppPath);
             emit appChanged(m_currentAppName, m_currentWindowTitle, m_currentAppPath);
         }
-    }
+        }
 }
 
 void CALLBACK AppMonitorWin::WinEventProc(
@@ -192,7 +198,7 @@ void CALLBACK AppMonitorWin::WinEventProc(
 {
     // Ensure this is a foreground window change and we have a valid instance
     if (event == EVENT_SYSTEM_FOREGROUND && s_instance && idObject == OBJID_WINDOW) {
-        // FIX: Don't capture s_instance in the lambda, use it directly
+        // Don't capture s_instance in the lambda, use it directly
         // since it's a static member variable
         QMetaObject::invokeMethod(s_instance, [hwnd]() {
             // s_instance is available here without capturing it

@@ -88,7 +88,7 @@ public:
     // Machine management
     bool getAllMachines(QJsonObject &responseData);
     bool getActiveMachines(QJsonObject &responseData);
-    bool getMachinesByName(const QString &name, QJsonObject &responseData);
+    bool getMachineByName(const QString &name, QJsonObject &responseData);
     bool getMachine(const QString &machineId, QJsonObject &responseData);
     bool createMachine(const QJsonObject &machineData, QJsonObject &responseData);
     bool registerMachine(const QJsonObject &machineData, QJsonObject &responseData);
@@ -107,11 +107,16 @@ public:
     bool getServerVersion(QJsonObject &responseData);
     bool getServerConfiguration(QJsonObject& configData);
 
+    int getLastErrorCode() const { return m_lastErrorCode; }
+    QString getLastErrorMessage() const { return m_lastErrorMessage; }
+
+    QString getAuthToken();
+    bool setAuthToken(const QString& token);
+
 private:
     bool sendRequest(const QString &endpoint, const QJsonObject &data, QJsonObject &responseData,
                     const QString &method = "POST", bool requiresAuth = true);
     bool processReply(QNetworkReply *reply, QJsonObject &responseData);
-    QString getAuthToken();
 
     QNetworkAccessManager *m_networkManager;
     QString m_serverUrl;
@@ -120,6 +125,9 @@ private:
     bool m_initialized;
     QString m_username;
     QString m_machineId;
+    int m_lastErrorCode = 0;
+    QString m_lastErrorMessage;
+
 };
 
 #endif // APIMANAGER_H

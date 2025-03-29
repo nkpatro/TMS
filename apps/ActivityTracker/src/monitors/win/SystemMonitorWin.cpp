@@ -323,6 +323,18 @@ void SystemMonitorWin::updateProcessList()
                 processTime.HighPart = kernelTime.dwHighDateTime + userTime.dwHighDateTime;
 
                 info.cpuUsage = static_cast<float>(calculateProcessCpuUsage(processHandle, processTime, sysTime));
+
+                // ADD THESE LINES to validate CPU values:
+                if (info.cpuUsage > 100.0f) {
+                    LOG_WARNING(QString("Abnormal CPU usage detected for process %1: %2%, normalizing")
+                               .arg(info.name).arg(info.cpuUsage));
+                    info.cpuUsage = 100.0f;
+                }
+            }
+
+            // Ensure process name isn't empty
+            if (info.name.isEmpty()) {
+                info.name = QString("Process-%1").arg(info.pid);
             }
 
             // Add to process list if it's using significant resources
@@ -348,24 +360,54 @@ void SystemMonitorWin::updateProcessList()
 
 double SystemMonitorWin::calculateProcessCpuUsage(HANDLE processHandle, ULARGE_INTEGER &processTime, ULARGE_INTEGER &systemTime)
 {
-    static ULARGE_INTEGER lastProcessTime;
-    static ULARGE_INTEGER lastSystemTime;
+    DWORD processId = GetProcessId(processHandle);
+    if (processId == 0) return 0.0;
 
-    double cpuUsage = 0.0;
-
-    // Calculate CPU usage based on delta
-    if (lastSystemTime.QuadPart != 0) {
-        ULONGLONG processDelta = processTime.QuadPart - lastProcessTime.QuadPart;
-        ULONGLONG systemDelta = systemTime.QuadPart - lastSystemTime.QuadPart;
-
-        if (systemDelta > 0) {
-            cpuUsage = (processDelta * 100.0) / systemDelta;
-        }
+    // First time measurement for the system
+    if (m_lastSystemTime.QuadPart == 0) {
+        m_lastProcessTimes[processId] = processTime;
+        m_lastSystemTime = systemTime;
+        return 0.0;
     }
 
-    // Update last values
-    lastProcessTime = processTime;
-    lastSystemTime = systemTime;
+    // First time seeing this process
+    if (!m_lastProcessTimes.contains(processId)) {
+        m_lastProcessTimes[processId] = processTime;
+        return 0.0;
+    }
+
+    // Calculate deltas
+    ULARGE_INTEGER lastProcTime = m_lastProcessTimes[processId];
+    ULONGLONG processDelta = processTime.QuadPart - lastProcTime.QuadPart;
+    ULONGLONG systemDelta = systemTime.QuadPart - m_lastSystemTime.QuadPart;
+
+    // Guard against division by zero
+    if (systemDelta == 0) {
+        m_lastProcessTimes[processId] = processTime;
+        m_lastSystemTime = systemTime;
+        return 0.0;
+    }
+
+    // Get number of cores
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    DWORD numProcessors = sysInfo.dwNumberOfProcessors;
+
+    // Calculate CPU usage as percentage and normalize by core count
+    double cpuUsage = ((double)processDelta / (double)systemDelta) * 100.0;
+
+    // Normalize by core count - a single-core process should max at 100%
+    // even on multi-core systems
+    if (cpuUsage > 100.0 * numProcessors) {
+        LOG_DEBUG(QString("Abnormally high CPU usage for process %1: %2%")
+                 .arg(processId).arg(cpuUsage));
+        cpuUsage = 100.0 * numProcessors;
+    }
+
+    // Store current values for next calculation
+    m_lastProcessTimes[processId] = processTime;
+    m_lastSystemTime = systemTime;
 
     return cpuUsage;
 }
+

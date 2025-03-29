@@ -1,5 +1,6 @@
 // ActivityTrackerService.cpp
 #include "ActivityTrackerService.h"
+#include "core/APIManager.h"
 #include "logger/logger.h"
 #include <QCoreApplication>
 #include <QHostInfo>
@@ -52,7 +53,7 @@ bool ActivityTrackerService::initialize()
 
     // Create config manager
     m_configManager = new ConfigManager(this);
-    if (!m_configManager->initialize(nullptr)) { // No API manager yet
+    if (!m_configManager->initialize()) { // No API manager yet
         LOG_ERROR("Failed to initialize ConfigManager");
         return false;
     }
@@ -63,6 +64,10 @@ bool ActivityTrackerService::initialize()
         return false;
     }
 
+    // Connect configuration change signals
+    //connect(m_configManager, &ConfigManager::configChanged,
+    //    this, &ActivityTrackerService::onConfigChanged);
+
     // Initialize user manager if multi-user mode is enabled
     if (m_multiUserMode) {
         m_userManager = new MultiUserManager(this);
@@ -72,49 +77,14 @@ bool ActivityTrackerService::initialize()
         if (!m_userManager->initialize()) {
             LOG_ERROR("Failed to initialize MultiUserManager");
             return false;
-        }
-    }
-
-    // Connect configuration change signals
-    connect(m_configManager, &ConfigManager::configChanged,
-            this, &ActivityTrackerService::onConfigChanged);
-
-    // Get machine ID from system or configuration
-    if (m_machineId.isEmpty()) {
-        // Generate machine ID if not configured
-        QString hostname = QHostInfo::localHostName();
-        m_machineId = hostname + "-" + QSysInfo::machineUniqueId();
-        m_configManager->setMachineId(m_machineId);
-    }
-
-    // Get current user
-    if (m_multiUserMode && m_userManager) {
-        m_currentUser = m_userManager->currentUser();
-
-        // If current user is empty but active users exist, use the first active user
-        if (m_currentUser.isEmpty()) {
-            QStringList activeUsers = m_userManager->activeUsers();
-            if (!activeUsers.isEmpty()) {
-                m_currentUser = activeUsers.first();
-                LOG_INFO(QString("Current user not set, using first active user: %1").arg(m_currentUser));
-            }
-        }
-    } else {
-        // Use configured or environment user
-        m_currentUser = m_configManager->defaultUsername();
-        if (m_currentUser.isEmpty()) {
-            m_currentUser = qgetenv("USER");
+        } else
+        {
+            m_currentUser = m_userManager->currentUser();
             if (m_currentUser.isEmpty()) {
-                m_currentUser = qgetenv("USERNAME");
-            }
-            if (m_currentUser.isEmpty()) {
-                // Try to get the current user from MultiUserManager's active users
-                if (m_multiUserMode && m_userManager && !m_userManager->activeUsers().isEmpty()) {
-                    m_currentUser = m_userManager->activeUsers().first();
-                    LOG_INFO(QString("Using first active user as current user: %1").arg(m_currentUser));
-                } else {
-                    m_currentUser = "unknown";
-                    LOG_WARNING("Could not determine current user, using 'unknown'");
+                QStringList activeUsers = m_userManager->activeUsers();
+                if (!activeUsers.isEmpty()) {
+                    m_currentUser = activeUsers.first();
+                    LOG_INFO(QString("Current user not set, using first active user: %1").arg(m_currentUser));
                 }
             }
         }
@@ -130,6 +100,7 @@ bool ActivityTrackerService::initialize()
 
     // Create tracker client
     m_trackerClient = new ActivityTrackerClient(this);
+    m_trackerClient->setConfigManager(m_configManager);
 
     // Connect client signals
     connect(m_trackerClient, &ActivityTrackerClient::statusChanged,
@@ -260,8 +231,11 @@ void ActivityTrackerService::onUserSessionChanged(const QString& username, bool 
     LOG_INFO(QString("User session changed: %1 (active: %2)").arg(username).arg(active));
 
     if (active && username != m_currentUser) {
-        // Stop current tracking
-        if (m_isRunning) {
+        // A new user has become active, switch to them
+
+        // First, if we're running, stop tracking for current user
+        bool wasRunning = m_isRunning;
+        if (wasRunning) {
             m_trackerClient->stop();
         }
 
@@ -271,9 +245,48 @@ void ActivityTrackerService::onUserSessionChanged(const QString& username, bool 
         // Re-initialize with new user
         m_trackerClient->initialize(m_serverUrl, m_currentUser, m_machineId);
 
+        // Set the auth token if available - AFTER initialization
+        if (m_multiUserMode && m_userManager && m_userManager->hasUserAuthToken(username)) {
+            // We have an auth token, pass it to the client's APIManager
+            QString token = m_userManager->getUserAuthToken(username);
+            if (!token.isEmpty()) {
+                LOG_INFO(QString("Setting existing auth token for user: %1").arg(username));
+
+                APIManager* apiManager = m_trackerClient->apiManager();
+                if (apiManager) {
+                    apiManager->setAuthToken(token);
+                    LOG_INFO("Auth token set in APIManager");
+                } else {
+                    LOG_WARNING("Could not get APIManager to set auth token");
+                }
+            }
+        }
+
         // Restart if service was running
-        if (m_isRunning) {
+        if (wasRunning) {
             m_trackerClient->start();
+        }
+    }
+    else if (!active && username == m_currentUser) {
+        // Current user has become inactive (locked screen, logged out, etc.)
+        // We should pause tracking but keep authentication token
+
+        if (m_isRunning) {
+            LOG_INFO(QString("Current user '%1' inactive, pausing tracking").arg(username));
+
+            // Before stopping, capture the auth token if it isn't already stored
+            if (m_multiUserMode && m_userManager && !m_userManager->hasUserAuthToken(username)) {
+                APIManager* apiManager = m_trackerClient->apiManager();
+                if (apiManager) {
+                    QString token = apiManager->getAuthToken();
+                    if (!token.isEmpty()) {
+                        m_userManager->setUserAuthToken(username, token);
+                        LOG_INFO(QString("Captured auth token for user '%1' before pausing").arg(username));
+                    }
+                }
+            }
+
+            m_trackerClient->stop();
         }
     }
 }
@@ -328,3 +341,27 @@ void ActivityTrackerService::setupSignalHandlers()
     std::signal(SIGHUP, signalHandler);
 #endif
 }
+
+bool ActivityTrackerService::authenticateCurrentUser()
+{
+    if (m_currentUser.isEmpty() || m_machineId.isEmpty()) {
+        LOG_ERROR("Cannot authenticate: username or machineId not set");
+        return false;
+    }
+
+    // If we have a MultiUserManager, use it for authentication to avoid redundant auth calls
+    if (m_multiUserMode && m_userManager) {
+        APIManager* apiManager = m_trackerClient->apiManager();
+        if (!apiManager) {
+            LOG_ERROR("Cannot authenticate: APIManager not available");
+            return false;
+        }
+
+        return m_userManager->authenticateUser(m_currentUser, m_machineId, apiManager);
+    }
+    else {
+        // Fall back to direct client authentication - this will always do the API call
+        return m_trackerClient->authenticate(m_currentUser, m_machineId);
+    }
+}
+

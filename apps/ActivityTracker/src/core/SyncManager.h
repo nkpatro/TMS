@@ -49,6 +49,7 @@ public:
     bool queueData(DataType type, const QUuid& sessionId, const QJsonObject& data, 
                   const QDateTime& timestamp = QDateTime::currentDateTime());
     bool processPendingQueue(int maxItems = 50);
+
     bool isOfflineMode() const { return m_offlineMode; }
     int queueSize() const { return m_dataQueue.size(); }
     int syncInterval() const { return m_syncInterval; }
@@ -80,6 +81,17 @@ private:
     int m_syncInterval;
     QDateTime m_lastSyncTime;
     QDateTime m_lastConnectionCheck;
+
+    int m_consecutiveFailures = 0;
+    static const int MAX_CONSECUTIVE_FAILURES = 5;
+    bool m_enablePersistence = false;
+
+    struct Stats {
+        int batchesSent = 0;
+        int sessionEventsSent = 0;
+        int activityEventsSent = 0;
+        int metricsSent = 0;
+    } m_stats;
     
     bool batchAndProcessData();
     bool sendBatchedData(const QUuid& sessionId, 
@@ -90,6 +102,7 @@ private:
     // Helper methods
     bool registerMachine(const QString& hostname, QString& machineId);
     bool authenticateUser(const QString& username, const QString& machineId);
+    void storeFailedBatchForRetry(const QUuid& sessionId, const QJsonObject& batchData);
 };
 
 #endif // SYNCMANAGER_H

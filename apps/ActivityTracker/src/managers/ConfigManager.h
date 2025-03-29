@@ -17,7 +17,7 @@ public:
     explicit ConfigManager(QObject *parent = nullptr);
     ~ConfigManager();
 
-    bool initialize(APIManager* apiManager);
+    bool initialize();
 
     // Getters
     QString serverUrl() const;
@@ -37,6 +37,7 @@ public:
     void setDataSendInterval(int milliseconds);
     void setIdleTimeThreshold(int milliseconds);
     void setMachineId(const QString &id);
+    void setMachineUniqueId(const QString &id);
     void setTrackKeyboardMouse(bool track);
     void setTrackApplications(bool track);
     void setTrackSystemMetrics(bool track);
@@ -56,6 +57,7 @@ public:
 signals:
     void configChanged();
     void machineIdChanged(const QString& machineId);
+    void machineUniqueIdChanged(const QString& machineId);
 
 private:
     // Helper methods
@@ -64,7 +66,6 @@ private:
     bool configFileExists() const;
 
     // Configuration settings
-    APIManager* m_apiManager;
     QSettings* m_settings;
     QMutex m_mutex;
 
@@ -72,6 +73,7 @@ private:
     int m_dataSendInterval;
     int m_idleTimeThreshold;
     QString m_machineId;
+    QString m_machineUniqueId;
     bool m_trackKeyboardMouse;
     bool m_trackApplications;
     bool m_trackSystemMetrics;

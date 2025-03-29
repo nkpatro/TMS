@@ -157,7 +157,7 @@ LRESULT CALLBACK SessionMonitorWin::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
 {
     // Handle WTS session notifications
     if (msg == WM_WTSSESSION_CHANGE && s_instance) {
-        // FIX: Don't capture s_instance, use it directly in the lambda
+        // Don't capture s_instance, use it directly in the lambda
         // since it's a static member variable
         QMetaObject::invokeMethod(s_instance, [wParam, lParam]() {
             // s_instance is available here without capturing it

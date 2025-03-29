@@ -7,6 +7,7 @@ SessionManager::SessionManager(QObject *parent)
     , m_apiManager(nullptr)
     , m_maxQueueSize(200)
     , m_initialized(false)
+    , m_multiUserManager(nullptr)
 {
 }
 
@@ -66,27 +67,27 @@ bool SessionManager::createOrReopenSession(const QDate &date, QUuid &sessionId, 
         }
     }
 
-    // No session found locally or session no longer valid on server,
-    // try to find one on the server for this date
-    QJsonObject query;
-    query["date"] = date.toString(Qt::ISODate);
-    query["username"] = m_username;
-    query["machine_id"] = m_machineId;
+    // No session found locally or session no longer valid on server
+    // Try to get any active session for this machine
+    QJsonObject activeSessionData;
+    if (m_apiManager->getActiveSession(m_machineId, activeSessionData)) {
+        // Check if this session is for today
+        QDateTime loginTime = QDateTime::fromString(
+            activeSessionData["login_time"].toString(), Qt::ISODate);
 
-    QJsonObject sessionData;
-    if (m_apiManager->findSessionForDate(query, sessionData)) {
-        // Session found on server
-        sessionId = QUuid(sessionData["session_id"].toString());
-        sessionStart = QDateTime::fromString(sessionData["login_time"].toString(), Qt::ISODate);
-        isNewSession = false;
+        if (loginTime.date() == date) {
+            sessionId = QUuid(activeSessionData["session_id"].toString());
+            sessionStart = loginTime;
+            isNewSession = false;
 
-        // Update our local cache
-        m_sessionsByDate[date] = sessionId;
+            // Update our local cache
+            m_sessionsByDate[date] = sessionId;
 
-        LOG_INFO(QString("Found session on server for date: %1, ID: %2").arg(
-            date.toString(), sessionId.toString()));
+            LOG_INFO(QString("Found active session for date: %1, ID: %2").arg(
+                date.toString(), sessionId.toString()));
 
-        return true;
+            return true;
+        }
     }
 
     // No session found, create a new one
@@ -94,6 +95,7 @@ bool SessionManager::createOrReopenSession(const QDate &date, QUuid &sessionId, 
     newSessionData["username"] = m_username;
     newSessionData["machine_id"] = m_machineId;
 
+    QJsonObject sessionData;
     if (m_apiManager->createSession(newSessionData, sessionData)) {
         sessionId = QUuid(sessionData["session_id"].toString());
         sessionStart = QDateTime::fromString(sessionData["login_time"].toString(), Qt::ISODate);
@@ -256,7 +258,8 @@ bool SessionManager::startAppUsage(const QUuid &sessionId, const QString &appNam
 
     // Prepare app usage data
     QJsonObject data;
-    data["session_id"] = sessionId.toString();
+    // Add session ID - format without curly braces
+    data["session_id"] = sessionId.toString().remove('{').remove('}');
     data["app_name"] = appName;
     data["window_title"] = windowTitle;
     data["executable_path"] = executablePath;
@@ -279,6 +282,12 @@ bool SessionManager::startAppUsage(const QUuid &sessionId, const QString &appNam
     // If API call failed, queue it for later
     if (!success) {
         LOG_WARNING(QString("Failed to start app usage, queuing: %1").arg(appName));
+
+        // Make sure we're queuing data with the session ID
+        if (!data.contains("session_id")) {
+            data["session_id"] = sessionId.toString().remove('{').remove('}');
+        }
+
         addToPendingQueue(DataType::AppUsage, sessionId, data);
 
         // Generate a temporary ID
@@ -298,16 +307,22 @@ bool SessionManager::endAppUsage(const QUuid &usageId)
         return false;
     }
 
-    // Prepare app usage data
-    QJsonObject data;
-    data["usage_id"] = usageId.toString();
-    data["end_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-
     // Find the session ID for this usage
     QUuid sessionId;
     if (m_appUsageIds.contains(usageId)) {
         sessionId = m_appUsageIds[usageId];
     }
+
+    if (sessionId.isNull()) {
+        LOG_WARNING("No session ID found for usage ID, cannot end app usage");
+        return false;
+    }
+
+    // Prepare app usage data
+    QJsonObject data;
+    data["usage_id"] = usageId.toString().remove('{').remove('}');
+    data["session_id"] = sessionId.toString().remove('{').remove('}');
+    data["end_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
 
     // Send request to end app usage
     QJsonObject responseData;
@@ -322,7 +337,7 @@ bool SessionManager::endAppUsage(const QUuid &usageId)
     }
 
     // If API call failed, queue it for later
-    if (!success && !sessionId.isNull()) {
+    if (!success) {
         LOG_WARNING(QString("Failed to end app usage, queuing: %1").arg(usageId.toString()));
         data["action"] = "end";
         addToPendingQueue(DataType::AppUsage, sessionId, data);
@@ -953,4 +968,9 @@ bool SessionManager::processBatchData(const QUuid &sessionId, const QJsonArray &
     }
 
     return m_apiManager->processSessionBatch(sessionId, batchData, responseData);
+}
+
+MultiUserManager* SessionManager::getMultiUserManager() const
+{
+    return m_multiUserManager;
 }

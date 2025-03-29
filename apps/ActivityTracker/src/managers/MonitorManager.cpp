@@ -1,6 +1,8 @@
 #include "MonitorManager.h"
 #include "logger/logger.h"
 #include "../core/ActivityMonitorBatcher.h"
+#include "../core/ApplicationCache.h"
+#include "src/core/ActivityTrackerClient.h"
 
 // Include platform-specific monitor implementations based on compiler defines
 #ifdef Q_OS_WIN
@@ -26,6 +28,7 @@ MonitorManager::MonitorManager(QObject *parent)
     , m_appMonitor(nullptr)
     , m_sessionMonitor(nullptr)
     , m_systemMonitor(nullptr)
+    , m_appCache(nullptr)
     , m_isRunning(false)
     , m_trackKeyboardMouse(true)
     , m_trackApplications(true)
@@ -37,6 +40,12 @@ MonitorManager::~MonitorManager()
 {
     if (m_isRunning) {
         stop();
+    }
+
+    // Only delete if we own it (not passed from another component)
+    if (m_appCache && m_appCache->parent() == this) {
+        delete m_appCache;
+        m_appCache = nullptr;
     }
 }
 
@@ -50,6 +59,35 @@ bool MonitorManager::initialize(bool trackKeyboardMouse, bool trackApplications,
 
     // Create platform-specific monitors
     createPlatformMonitors();
+
+    // Initialize application cache if tracking applications
+    if (m_trackApplications) {
+        // We need access to APIManager - pass it from ActivityTrackerClient via constructor
+        // or a separate setAPIManager method if not already available
+
+        // Assuming we have APIManager available via ActivityTrackerClient
+        APIManager* apiManager = nullptr;
+
+        // First check if we can get from ActivityTrackerClient
+        QObject* parent = this->parent();
+        while (parent) {
+            ActivityTrackerClient* client = qobject_cast<ActivityTrackerClient*>(parent);
+            if (client) {
+                apiManager = client->apiManager();
+                break;
+            }
+            parent = parent->parent();
+        }
+
+        if (apiManager) {
+            m_appCache = new ApplicationCache(this);
+            if (!m_appCache->initialize(apiManager)) {
+                LOG_WARNING("Failed to initialize ApplicationCache");
+            }
+        } else {
+            LOG_WARNING("APIManager not available for ApplicationCache");
+        }
+    }
 
     // Initialize monitors according to tracking settings
     bool initSuccess = true;

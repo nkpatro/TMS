@@ -12,6 +12,8 @@
 #include <QSysInfo>
 #include <QNetworkInterface>
 
+#include "ApplicationCache.h"
+
 ActivityTrackerClient::ActivityTrackerClient(QObject* parent)
     : QObject(parent)
     , m_apiManager(nullptr)
@@ -45,7 +47,7 @@ ActivityTrackerClient::~ActivityTrackerClient()
     delete m_monitorManager;
     delete m_sessionManager;
     delete m_apiManager;
-    delete m_configManager;
+	//delete m_configManager; This not required as it is parented to the service
 }
 
 bool ActivityTrackerClient::initialize(const QString& serverUrl, const QString& username, const QString& machineId)
@@ -62,27 +64,6 @@ bool ActivityTrackerClient::initialize(const QString& serverUrl, const QString& 
     if (!m_apiManager->initialize(m_serverUrl)) {
         LOG_ERROR("Failed to initialize API Manager");
         return false;
-    }
-
-    // 2. Initialize Config Manager
-    m_configManager = new ConfigManager(this);
-    if (!m_configManager->initialize(m_apiManager)) {
-        LOG_ERROR("Failed to initialize Config Manager");
-        return false;
-    }
-
-    // Connect config change signals
-    connect(m_configManager, &ConfigManager::configChanged, this, &ActivityTrackerClient::onConfigChanged);
-    connect(m_configManager, &ConfigManager::machineIdChanged, this, &ActivityTrackerClient::onMachineIdChanged);
-
-    // 3. Load local config
-    if (!m_configManager->loadLocalConfig()) {
-        LOG_WARNING("Failed to load local config, using defaults");
-    }
-
-    // 4. Check for server config
-    if (!m_configManager->fetchServerConfig()) {
-        LOG_WARNING("Failed to fetch server config, using local config");
     }
 
     // 5. Apply config settings
@@ -185,6 +166,18 @@ bool ActivityTrackerClient::initialize(const QString& serverUrl, const QString& 
 
     // Set monitor configuration
     m_monitorManager->setIdleTimeThreshold(m_idleTimeThreshold);
+
+    // 13. Initialize ApplicationCache if not already done by MonitorManager
+    if (m_monitorManager && m_monitorManager->isTrackingApplications() && !m_monitorManager->appCache()) {
+        ApplicationCache* appCache = new ApplicationCache(m_monitorManager);
+        if (appCache->initialize(m_apiManager)) {
+            LOG_INFO("Application cache initialized successfully");
+            m_monitorManager->setAppCache(appCache);
+        } else {
+            LOG_WARNING("Failed to initialize application cache");
+            delete appCache;
+        }
+    }
 
     m_currentSessionDay = QDate::currentDate();
 
@@ -368,6 +361,13 @@ bool ActivityTrackerClient::isOfflineMode() const
     return m_syncManager ? m_syncManager->isOfflineMode() : false;
 }
 
+void ActivityTrackerClient::setConfigManager(ConfigManager* configManager) {
+    // Store the reference and connect signals
+    m_configManager = configManager;
+    connect(m_configManager, &ConfigManager::configChanged,
+        this, &ActivityTrackerClient::onConfigChanged);
+}
+
 void ActivityTrackerClient::onConfigChanged()
 {
     LOG_INFO("Configuration changed, applying updates");
@@ -454,13 +454,16 @@ void ActivityTrackerClient::onBatchedMouseActivity(const QList<QPoint>& position
     }
 }
 
-void ActivityTrackerClient::onBatchedAppActivity(const QString& appName, const QString& windowTitle,
-    const QString& executablePath, int focusChanges)
+void ActivityTrackerClient::onBatchedAppActivity(const QString &appName, const QString &windowTitle,
+    const QString &executablePath, int focusChanges)
 {
     if (!m_isRunning) return;
 
     // Only record if actually changed
     if (m_currentAppName != appName || m_currentWindowTitle != windowTitle || m_currentAppPath != executablePath) {
+        // Get app ID - this is the key change
+        QString appId = getAppId(appName, executablePath);
+
         // If there was a previous app, end its usage
         if (!m_currentAppName.isEmpty()) {
             QJsonObject endData;
@@ -469,8 +472,14 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString& appName, const Q
             endData["executable_path"] = m_currentAppPath;
             endData["action"] = "end";
 
+            // Add app ID if we have it
+            if (!m_currentAppId.isEmpty()) {
+                endData["app_id"] = m_currentAppId;
+            }
+
             QUuid sessionId = this->sessionId();
             if (!sessionId.isNull()) {
+                endData["session_id"] = sessionId.toString().remove('{').remove('}');
                 m_syncManager->queueData(SyncManager::DataType::AppUsage, sessionId, endData);
             }
         }
@@ -482,8 +491,14 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString& appName, const Q
         startData["executable_path"] = executablePath;
         startData["action"] = "start";
 
+        // Add app ID if we have it
+        if (!appId.isEmpty()) {
+            startData["app_id"] = appId;
+        }
+
         QUuid sessionId = this->sessionId();
         if (!sessionId.isNull()) {
+            startData["session_id"] = sessionId.toString().remove('{').remove('}');
             m_syncManager->queueData(SyncManager::DataType::AppUsage, sessionId, startData);
         }
 
@@ -491,6 +506,7 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString& appName, const Q
         m_currentAppName = appName;
         m_currentWindowTitle = windowTitle;
         m_currentAppPath = executablePath;
+        m_currentAppId = appId; // Store the app ID
 
         // Record activity event for app change
         QJsonObject eventData;
@@ -498,6 +514,11 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString& appName, const Q
         eventData["window_title"] = windowTitle;
         eventData["executable_path"] = executablePath;
         eventData["focus_changes"] = focusChanges;
+
+        // Add app ID if available
+        if (!appId.isEmpty()) {
+            eventData["app_id"] = appId;
+        }
 
         recordActivityEvent("app_changed", eventData);
     }
@@ -738,12 +759,14 @@ bool ActivityTrackerClient::checkAndRegisterMachine() {
     LOG_INFO("Checking machine registration status");
 
     // First try to get machine info
-    QJsonObject machineResponse;
-    bool machineExists = m_apiManager->getMachine(m_machineId, machineResponse);
+    if (!m_machineId.isEmpty()) {
+        QJsonObject machineResponse;
+        bool machineExists = m_apiManager->getMachine(m_machineId, machineResponse);
 
-    if (machineExists) {
-        LOG_INFO("Machine already registered with ID: " + m_machineId);
-        return true;
+        if (machineExists) {
+            LOG_INFO("Machine already registered with ID: " + m_machineId);
+            return true;
+        }
     }
 
     // Machine not found, register it
@@ -808,5 +831,45 @@ bool ActivityTrackerClient::checkAndRegisterMachine() {
 
     LOG_ERROR("Failed to register machine");
     return false;
+}
+
+QString ActivityTrackerClient::getAppId(const QString &appName, const QString &executablePath)
+{
+    // Check if we have a monitor manager with app cache
+    if (!m_monitorManager || !m_monitorManager->appCache()) {
+        LOG_WARNING("No app cache available to get app ID");
+        return QString();
+    }
+
+    // First check if app is in cache
+    QString appId = m_monitorManager->appCache()->findAppId(executablePath);
+
+    if (appId.isEmpty()) {
+        // App not in cache, register it
+        appId = m_monitorManager->appCache()->registerApplication(appName, executablePath);
+    }
+
+    return appId;
+}
+
+bool ActivityTrackerClient::authenticate(const QString& username, const QString& machineId)
+{
+    if (!m_apiManager) {
+        LOG_ERROR("Cannot authenticate: APIManager not initialized");
+        return false;
+    }
+
+    QJsonObject authResponse;
+    return m_apiManager->authenticate(username, machineId, authResponse);
+}
+
+bool ActivityTrackerClient::setAuthToken(const QString& token)
+{
+    if (!m_apiManager) {
+        LOG_ERROR("Cannot set auth token: APIManager not initialized");
+        return false;
+    }
+
+    return m_apiManager->setAuthToken(token);
 }
 

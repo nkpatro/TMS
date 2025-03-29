@@ -40,6 +40,7 @@ set(CORE_SOURCES
         src/core/SessionManager.cpp
         src/core/SessionStateMachine.cpp
         src/core/SyncManager.cpp
+        src/core/ApplicationCache.cpp
 )
 
 # Header files for core functionality
@@ -50,6 +51,7 @@ set(CORE_HEADERS
         src/core/SessionManager.h
         src/core/SessionStateMachine.h
         src/core/SyncManager.h
+        src/core/ApplicationCache.h
 )
 
 # Source files for manager components

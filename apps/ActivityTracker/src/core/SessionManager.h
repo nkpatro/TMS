@@ -11,6 +11,8 @@
 #include <QMap>
 #include "APIManager.h"
 
+class MultiUserManager;
+
 class SessionManager : public QObject
 {
     Q_OBJECT
@@ -103,6 +105,8 @@ private:
     QString m_username;
     QString m_machineId;
     QUuid m_activeAfkPeriodId;
+    MultiUserManager* m_multiUserManager;
+    MultiUserManager* getMultiUserManager() const;
 
     // Local cache for active sessions and app usages
     QMap<QUuid, QDateTime> m_sessionStarts;
