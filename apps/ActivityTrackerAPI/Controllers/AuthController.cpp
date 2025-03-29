@@ -1,4 +1,5 @@
 #include "AuthController.h"
+#include "Repositories/tokenrepository.h"
 #include "Services/ADVerificationService.h"
 #include <QJsonDocument>
 #include <QUuid>
@@ -60,11 +61,65 @@ void AuthController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // New endpoint: Service token generation
+    // Service token generation
     server.route("/api/auth/service-token", QHttpServerRequest::Method::Post,
         [this](const QHttpServerRequest &request) {
             logRequestReceived(request);
             auto response = handleServiceToken(request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // API key generation
+    server.route("/api/auth/api-key", QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleApiKey(request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // Token validation
+    server.route("/api/auth/validate", QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleValidateToken(request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // Change password
+    server.route("/api/auth/change-password", QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleChangePassword(request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // NEW: Get all user tokens
+    server.route("/api/auth/tokens", QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleGetTokens(request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // NEW: Get current token info
+    server.route("/api/auth/token/info", QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleGetTokenInfo(request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // NEW: Revoke specific token
+    server.route("/api/auth/tokens/<arg>", QHttpServerRequest::Method::Delete,
+        [this](const QString &tokenId, const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleRevokeToken(tokenId, request);
             logRequestCompleted(request, response.statusCode());
             return response;
         });
@@ -707,4 +762,311 @@ QUuid AuthController::createDefaultAdminUser() {
     }
 }
 
+QHttpServerResponse AuthController::handleGetTokens(const QHttpServerRequest &request)
+{
+    LOG_INFO("Get tokens request received");
+
+    QJsonObject userData;
+    if (!isUserAuthorized(request, userData, true)) {
+        LOG_WARNING("Unauthorized tokens request");
+        return Http::Response::unauthorized("Unauthorized");
+    }
+
+    QUuid userId = QUuid(userData["id"].toString());
+
+    // Get all tokens for this user from TokenRepository
+    QList<QSharedPointer<TokenModel>> tokens = m_tokenRepository->getTokensByUserId(userId);
+
+    // Convert to JSON array with minimal sensitive info
+    QJsonArray tokensArray;
+    for (const auto &token : tokens) {
+        QJsonObject tokenObj;
+        tokenObj["id"] = token->id().toString(QUuid::WithoutBraces);
+        tokenObj["token_id"] = token->tokenId();
+        tokenObj["token_type"] = token->tokenType();
+        tokenObj["created_at"] = token->createdAt().toString(Qt::ISODate);
+        tokenObj["expires_at"] = token->expiresAt().toString(Qt::ISODate);
+        tokenObj["last_used_at"] = token->lastUsedAt().toString(Qt::ISODate);
+        tokenObj["is_expired"] = token->isExpired();
+        tokenObj["is_revoked"] = token->isRevoked();
+
+        // Include device info if available
+        if (!token->deviceInfo().isEmpty()) {
+            tokenObj["device_info"] = token->deviceInfo();
+        }
+
+        tokensArray.append(tokenObj);
+    }
+
+    LOG_INFO(QString("Retrieved %1 tokens for user %2").arg(tokens.size()).arg(userId.toString()));
+    return Http::Response::json(tokensArray);
+}
+
+QHttpServerResponse AuthController::handleGetTokenInfo(const QHttpServerRequest &request)
+{
+    LOG_INFO("Token info request received");
+
+    // Extract token from request
+    QString token = AuthFramework::instance().extractToken(request);
+    if (token.isEmpty()) {
+        LOG_WARNING("No token provided for token info request");
+        return Http::Response::badRequest("No token provided");
+    }
+
+    // Check if the token exists and get its data
+    QJsonObject tokenData;
+    bool valid = AuthFramework::instance().validateToken(token, tokenData);
+
+    if (!valid) {
+        LOG_WARNING("Invalid token provided for token info request");
+        return Http::Response::unauthorized("Invalid token", "INVALID_TOKEN");
+    }
+
+    // Create response with token info
+    QJsonObject response;
+
+    // Basic token info
+    response["token_type"] = "Bearer";
+
+    // Add expiry info
+    if (tokenData.contains("expires_at")) {
+        QDateTime expiryTime = QDateTime::fromString(tokenData["expires_at"].toString(), Qt::ISODate);
+        QDateTime now = QDateTime::currentDateTimeUtc();
+
+        response["expires_at"] = tokenData["expires_at"].toString();
+        response["expires_in"] = now.secsTo(expiryTime);
+    }
+
+    // Add creation info
+    if (tokenData.contains("created_at")) {
+        response["created_at"] = tokenData["created_at"].toString();
+    }
+
+    // Add user info
+    if (tokenData.contains("name")) {
+        response["username"] = tokenData["name"].toString();
+    }
+
+    if (tokenData.contains("id")) {
+        response["user_id"] = tokenData["id"].toString();
+    }
+
+    // Add roles if available
+    if (tokenData.contains("roles")) {
+        response["roles"] = tokenData["roles"];
+    }
+
+    LOG_INFO(QString("Token info retrieved for user: %1").arg(tokenData["name"].toString()));
+    return Http::Response::json(response);
+}
+
+QHttpServerResponse AuthController::handleRevokeToken(const QString &tokenId, const QHttpServerRequest &request)
+{
+    LOG_INFO(QString("Revoke token request received for token: %1").arg(tokenId));
+
+    QJsonObject userData;
+    if (!isUserAuthorized(request, userData, true)) {
+        LOG_WARNING("Unauthorized token revocation request");
+        return Http::Response::unauthorized("Unauthorized");
+    }
+
+    QUuid userId = QUuid(userData["id"].toString());
+
+    // Verify the token belongs to this user
+    auto token = m_tokenRepository->getByTokenId(tokenId);
+    if (!token) {
+        LOG_WARNING(QString("Token not found: %1").arg(tokenId));
+        return Http::Response::notFound("Token not found");
+    }
+
+    if (token->userId() != userId) {
+        LOG_WARNING(QString("Unauthorized attempt to revoke token %1 by user %2").arg(tokenId, userId.toString()));
+        return Http::Response::forbidden("Cannot revoke tokens belonging to other users");
+    }
+
+    // Revoke the token using TokenRepository directly
+    bool success = m_tokenRepository->revokeToken(token->tokenId(), "User-initiated revocation");
+
+    if (success) {
+        LOG_INFO(QString("Token %1 revoked successfully by user %2").arg(tokenId, userId.toString()));
+        return Http::Response::json(QJsonObject{{"success", true}, {"message", "Token revoked successfully"}});
+    } else {
+        LOG_ERROR(QString("Failed to revoke token %1").arg(tokenId));
+        return Http::Response::internalError("Failed to revoke token");
+    }
+}
+
+QHttpServerResponse AuthController::handleApiKey(const QHttpServerRequest &request)
+{
+    LOG_INFO("API key generation request received");
+
+    QJsonObject userData;
+    if (!isUserAuthorized(request, userData, true)) {
+        LOG_WARNING("Unauthorized API key generation request");
+        return Http::Response::unauthorized("Unauthorized");
+    }
+
+    // Parse request body
+    bool ok;
+    QJsonObject json = extractJsonFromRequest(request, ok);
+    if (!ok) {
+        LOG_WARNING("Invalid JSON data in API key request");
+        return Http::Response::badRequest("Invalid JSON data");
+    }
+
+    // Validate required fields
+    QStringList requiredFields = {"service_id", "description"};
+    QStringList missingFields;
+    if (!validateRequiredFields(json, requiredFields, missingFields)) {
+        LOG_WARNING("API key request missing required fields");
+        return Http::Response::validationError("Missing required fields", {
+            {"missing_fields", missingFields.join(", ")}
+        });
+    }
+
+    // Extract fields
+    QString serviceId = json["service_id"].toString();
+    QString description = json["description"].toString();
+    QUuid createdBy = QUuid(userData["id"].toString());
+
+    try {
+        // Generate an API key
+        QString apiKey = AuthFramework::instance().generateApiKey(
+            serviceId, description, createdBy);
+
+        // Create response
+        QJsonObject response;
+        response["api_key"] = apiKey;
+        response["service_id"] = serviceId;
+        response["description"] = description;
+        response["expires_at"] = QDateTime::currentDateTimeUtc().addYears(1).toString(Qt::ISODate);
+
+        LOG_INFO(QString("API key generated for service: %1").arg(serviceId));
+        return Http::Response::json(response);
+    }
+    catch (const std::exception& e) {
+        LOG_ERROR(QString("Exception generating API key: %1").arg(e.what()));
+        return Http::Response::internalError(
+            QString("Failed to generate API key: %1").arg(e.what())
+        );
+    }
+}
+
+QHttpServerResponse AuthController::handleValidateToken(const QHttpServerRequest &request)
+{
+    LOG_INFO("Token validation request received");
+
+    // Extract token from request body or use Authorization header
+    bool ok;
+    QJsonObject json = extractJsonFromRequest(request, ok);
+
+    QString token;
+    if (ok && json.contains("token") && !json["token"].toString().isEmpty()) {
+        token = json["token"].toString();
+    } else {
+        token = AuthFramework::instance().extractToken(request);
+    }
+
+    if (token.isEmpty()) {
+        LOG_WARNING("No token provided for validation");
+        return Http::Response::badRequest("No token provided");
+    }
+
+    // Validate the token
+    QJsonObject tokenData;
+    bool valid = AuthFramework::instance().validateToken(token, tokenData);
+
+    QJsonObject response;
+    response["valid"] = valid;
+
+    if (valid) {
+        // Add basic user info from token
+        if (tokenData.contains("name")) {
+            response["username"] = tokenData["name"].toString();
+        }
+
+        if (tokenData.contains("id")) {
+            response["user_id"] = tokenData["id"].toString();
+        }
+
+        // Add token expiry info
+        if (tokenData.contains("expires_at")) {
+            QDateTime expiryTime = QDateTime::fromString(tokenData["expires_at"].toString(), Qt::ISODate);
+            QDateTime now = QDateTime::currentDateTimeUtc();
+
+            response["expires_at"] = tokenData["expires_at"].toString();
+            response["expires_in"] = now.secsTo(expiryTime);
+        }
+
+        LOG_INFO(QString("Token validated successfully for user: %1").arg(tokenData["name"].toString()));
+    } else {
+        LOG_WARNING("Invalid token validation attempt");
+    }
+
+    return Http::Response::json(response);
+}
+
+QHttpServerResponse AuthController::handleChangePassword(const QHttpServerRequest &request)
+{
+    LOG_INFO("Change password request received");
+
+    QJsonObject userData;
+    if (!isUserAuthorized(request, userData, true)) {
+        LOG_WARNING("Unauthorized password change request");
+        return Http::Response::unauthorized("Unauthorized");
+    }
+
+    // Parse request body
+    bool ok;
+    QJsonObject json = extractJsonFromRequest(request, ok);
+    if (!ok) {
+        LOG_WARNING("Invalid JSON data in password change request");
+        return Http::Response::badRequest("Invalid JSON data");
+    }
+
+    // Validate required fields
+    QStringList requiredFields = {"current_password", "new_password"};
+    QStringList missingFields;
+    if (!validateRequiredFields(json, requiredFields, missingFields)) {
+        LOG_WARNING("Password change request missing required fields");
+        return Http::Response::validationError("Missing required fields", {
+            {"missing_fields", missingFields.join(", ")}
+        });
+    }
+
+    // Extract fields
+    QString currentPassword = json["current_password"].toString();
+    QString newPassword = json["new_password"].toString();
+    QUuid userId = QUuid(userData["id"].toString());
+
+    // Validate current password
+    QSharedPointer<UserModel> user;
+    bool validPassword = m_repository->validateCredentials(userData["email"].toString(), currentPassword, user);
+
+    if (!validPassword) {
+        LOG_WARNING(QString("Invalid current password for user: %1").arg(userId.toString()));
+        return Http::Response::unauthorized("Current password is incorrect", "INVALID_PASSWORD");
+    }
+
+    // Validate new password complexity
+    if (newPassword.length() < 8) {
+        LOG_WARNING("New password too short");
+        return Http::Response::badRequest("New password must be at least 8 characters long");
+    }
+
+    // Update password
+    bool success = m_repository->updatePassword(userId, newPassword);
+
+    if (success) {
+        LOG_INFO(QString("Password updated successfully for user: %1").arg(userId.toString()));
+
+        // Revoke all existing tokens for security using TokenRepository directly
+        m_tokenRepository->revokeAllUserTokens(userId, "Password changed");
+
+        return Http::Response::json(QJsonObject{{"success", true}, {"message", "Password updated successfully"}});
+    } else {
+        LOG_ERROR(QString("Failed to update password for user: %1").arg(userId.toString()));
+        return Http::Response::internalError("Failed to update password");
+    }
+}
 

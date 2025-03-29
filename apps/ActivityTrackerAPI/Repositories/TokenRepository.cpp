@@ -516,3 +516,66 @@ bool TokenRepository::tokenExists(const QString& token)
     LOG_DEBUG(QString("Token existence check: %1 - %2").arg(token).arg(exists ? "exists" : "not found"));
     return exists;
 }
+
+QList<QSharedPointer<TokenModel>> TokenRepository::getTokensByUserId(const QUuid &userId)
+{
+    LOG_DEBUG(QString("Getting tokens for user ID: %1").arg(userId.toString()));
+
+    if (!isInitialized()) {
+        LOG_ERROR("Cannot get tokens by user ID: Repository not initialized");
+        return QList<QSharedPointer<TokenModel>>();
+    }
+
+    QMap<QString, QVariant> params;
+    params["user_id"] = userId.toString(QUuid::WithoutBraces);
+
+    QString query = "SELECT * FROM auth_tokens WHERE user_id = :user_id ORDER BY created_at DESC";
+
+    auto tokens = m_dbService->executeSelectQuery(
+        query,
+        params,
+        [this](const QSqlQuery& query) -> TokenModel* {
+            return createModelFromQuery(query);
+        }
+    );
+
+    QList<QSharedPointer<TokenModel>> result;
+    for (auto token : tokens) {
+        result.append(QSharedPointer<TokenModel>(token));
+    }
+
+    LOG_INFO(QString("Retrieved %1 tokens for user ID: %2").arg(tokens.count()).arg(userId.toString()));
+    return result;
+}
+
+QSharedPointer<TokenModel> TokenRepository::getByTokenId(const QString &tokenId)
+{
+    LOG_DEBUG(QString("Getting token by ID: %1").arg(tokenId));
+
+    if (!isInitialized()) {
+        LOG_ERROR("Cannot get token: Repository not initialized");
+        return nullptr;
+    }
+
+    QMap<QString, QVariant> params;
+    params["token_id"] = tokenId;
+
+    QString query = "SELECT * FROM auth_tokens WHERE token_id = :token_id";
+
+    auto result = m_dbService->executeSingleSelectQuery(
+        query,
+        params,
+        [this](const QSqlQuery& query) -> TokenModel* {
+            return createModelFromQuery(query);
+        }
+    );
+
+    if (result) {
+        LOG_INFO(QString("Token found: %1").arg(tokenId));
+        return QSharedPointer<TokenModel>(*result);
+    } else {
+        LOG_WARNING(QString("Token not found: %1").arg(tokenId));
+        return nullptr;
+    }
+}
+

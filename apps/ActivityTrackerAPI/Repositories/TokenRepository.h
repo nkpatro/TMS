@@ -90,6 +90,9 @@ public:
      */
     bool tokenExists(const QString& token);
 
+    QList<QSharedPointer<TokenModel>> getTokensByUserId(const QUuid &userId);
+    QSharedPointer<TokenModel> getByTokenId(const QString &tokenId);
+
 protected:
     // Required BaseRepository abstract method implementations
     QString getEntityName() const override;

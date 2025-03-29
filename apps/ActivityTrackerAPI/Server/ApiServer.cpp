@@ -14,6 +14,7 @@
 #include "Controllers/ServerStatusController.h"
 #include "Services/ADVerificationService.h"
 #include "Repositories/UserRepository.h"
+#include "Repositories/TokenRepository.h"
 #include "Repositories/MachineRepository.h"
 #include "Repositories/SessionRepository.h"
 #include "Repositories/ActivityEventRepository.h"
@@ -207,10 +208,18 @@ void ApiServer::setupControllers()
         m_userRoleDisciplineRepository = new UserRoleDisciplineRepository(this);
         m_userRoleDisciplineRepository->initialize(&DbManager::instance().getService<UserRoleDisciplineModel>());
 
+        // Create and initialize TokenRepository
+        m_tokenRepository = new TokenRepository(this);
+        m_tokenRepository->initialize(&DbManager::instance().getService<TokenModel>());
+
         // Configure AuthFramework with repositories
         AuthFramework::instance().setUserRepository(m_userRepository);
+        AuthFramework::instance().setTokenRepository(m_tokenRepository); // Set TokenRepository
         AuthFramework::instance().setAutoCreateUsers(true);
         AuthFramework::instance().setEmailDomain("redefine.co");
+
+        // Initialize token storage to load tokens from database
+        AuthFramework::instance().initializeTokenStorage();
 
         // Set token expiry times
         AuthFramework::instance().setTokenExpiry(AuthFramework::UserToken, 24);      // 1 day
@@ -228,6 +237,7 @@ void ApiServer::setupControllers()
 
         // Create AuthController with AD verification
         m_authController = std::make_shared<AuthController>(m_userRepository, m_adVerificationService.get(), this);
+        m_authController->setTokenRepository(m_tokenRepository);
 
         // Configure AuthController
         m_authController->setAutoCreateUsers(true);
@@ -383,6 +393,9 @@ void ApiServer::cleanupRepositories()
 
     delete m_userRoleDisciplineRepository;
     m_userRoleDisciplineRepository = nullptr;
+
+    delete m_tokenRepository;
+    m_tokenRepository = nullptr;
 
     LOG_INFO("Repository cleanup completed");
 }

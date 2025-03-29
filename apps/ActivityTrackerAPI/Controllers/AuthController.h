@@ -39,6 +39,8 @@ public:
     void setEmailDomain(const QString &domain);
     QUuid createDefaultAdminUser();
 
+    void setTokenRepository(TokenRepository* tokenRepository) { m_tokenRepository = tokenRepository; }
+
 private:
     // Auth endpoints handlers
     QHttpServerResponse handleLogin(const QHttpServerRequest &request);
@@ -47,6 +49,13 @@ private:
     QHttpServerResponse handleRefreshToken(const QHttpServerRequest &request);
     QHttpServerResponse handleActivityTracking(const QHttpServerRequest &request);
     QHttpServerResponse handleServiceToken(const QHttpServerRequest &request);
+
+    QHttpServerResponse handleGetTokens(const QHttpServerRequest &request);
+    QHttpServerResponse handleGetTokenInfo(const QHttpServerRequest &request);
+    QHttpServerResponse handleRevokeToken(const QString &tokenId, const QHttpServerRequest &request);
+    QHttpServerResponse handleApiKey(const QHttpServerRequest &request);
+    QHttpServerResponse handleValidateToken(const QHttpServerRequest &request);
+    QHttpServerResponse handleChangePassword(const QHttpServerRequest &request);
 
     // User creation and validation
     QSharedPointer<UserModel> createNewUser(const QString &username, const QString &name, const QString &email);
@@ -67,6 +76,7 @@ private:
 
     UserRepository *m_repository;
     ADVerificationService *m_adService;
+    TokenRepository *m_tokenRepository;
 
     // Configuration parameters
     bool m_autoCreateUsers;

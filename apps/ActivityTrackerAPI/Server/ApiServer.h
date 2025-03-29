@@ -28,6 +28,7 @@ class ADVerificationService;
 
 // Forward declarations for repositories
 class UserRepository;
+class TokenRepository;
 class MachineRepository;
 class SessionRepository;
 class ActivityEventRepository;
@@ -85,6 +86,7 @@ private:
 
     // Repositories
     UserRepository* m_userRepository;
+    TokenRepository* m_tokenRepository;
     MachineRepository* m_machineRepository;
     SessionRepository* m_sessionRepository;
     ActivityEventRepository* m_activityEventRepository;
