@@ -14,6 +14,7 @@ class AuthController;
 class UserRepository;
 class UserModel;
 class RoleRepository;
+class TokenRepository;
 
 class AuthFramework : public QObject {
     Q_OBJECT
@@ -44,12 +45,75 @@ public:
     QString extractApiKey(const QHttpServerRequest& request);
 
     // Token validation methods
-    bool validateToken(const QString& token, QJsonObject& userData);
     bool validateServiceToken(const QString& token, QJsonObject& tokenData);
     bool validateApiKey(const QString& key, QJsonObject& apiKeyData);
 
     // Token generation methods
+    TokenRepository* getTokenRepository() const { return m_tokenRepository; }\
+        /**
+     * @brief Set the token repository for database operations
+     * @param tokenRepository Pointer to initialized token repository
+     */
+    void setTokenRepository(TokenRepository* tokenRepository);
+
+    /**
+     * @brief Initialize token storage from database
+     * @return True if successful, false otherwise
+     */
+    bool initializeTokenStorage();
+
+    /**
+     * @brief Validate a token and retrieve user data
+     * @param token Token string to validate
+     * @param userData Output parameter for user data
+     * @return True if token is valid, false otherwise
+     */
+    bool validateToken(const QString& token, QJsonObject& userData);
+
+    /**
+     * @brief Generate a new token for a user
+     * @param userData User data to include in token
+     * @param expiryHours Token validity period in hours
+     * @return Generated token string
+     */
     QString generateToken(const QJsonObject& userData, int expiryHours = 24);
+
+    /**
+     * @brief Generate a refresh token for a user
+     * @param userData User data to include in token
+     * @param expiryDays Token validity period in days
+     * @return Generated refresh token string
+     */
+    QString generateRefreshToken(const QJsonObject& userData, int expiryDays = 30);
+
+    /**
+     * @brief Refresh a user token using a refresh token
+     * @param refreshToken Refresh token string
+     * @param newToken Output parameter for new token
+     * @param userData Output parameter for user data
+     * @return True if refresh was successful
+     */
+    bool refreshUserToken(const QString& refreshToken, QString& newToken, QJsonObject& userData);
+
+    /**
+     * @brief Revoke a token
+     * @param token Token to revoke
+     * @return True if token was revoked
+     */
+    bool removeToken(const QString& token);
+
+    /**
+     * @brief Remove expired tokens from memory and database
+     */
+    void purgeExpiredTokens();
+
+    /**
+     * @brief Check if a token is expired
+     * @param tokenData Token data containing expiry information
+     * @return True if token is expired
+     */
+    bool isTokenExpired(const QJsonObject& tokenData) const;
+
     QString generateServiceToken(
         const QString& serviceId,
         const QString& username,
@@ -60,7 +124,6 @@ public:
         const QString& serviceId,
         const QString& description,
         const QUuid& createdBy);
-    QString generateRefreshToken(const QJsonObject& userData, int expiryDays = 30);
 
     // Authorization methods
     bool authorizeRequest(const QHttpServerRequest& request, QJsonObject& userData, bool strictMode = false);
@@ -75,11 +138,6 @@ public:
 
     // User validation methods
     QSharedPointer<UserModel> validateAndGetUserForTracking(const QString& username);
-
-    // Token management
-    bool removeToken(const QString& token);
-    bool refreshUserToken(const QString& refreshToken, QString& newToken, QJsonObject& userData);
-    void purgeExpiredTokens();
 
     // Configuration
     void setAuthController(AuthController* authController);
@@ -109,6 +167,7 @@ private:
     AuthController* m_authController = nullptr;
     UserRepository* m_userRepository = nullptr;
     RoleRepository* m_roleRepository = nullptr;
+    TokenRepository* m_tokenRepository = nullptr;
     QMap<QString, QJsonObject> m_tokenToUserData;
     QMap<QString, QJsonObject> m_serviceTokens;
     QMap<QString, QJsonObject> m_apiKeys;
@@ -121,7 +180,6 @@ private:
 
     // Helper methods
     QJsonObject userToJson(UserModel* user) const;
-    bool isTokenExpired(const QJsonObject& tokenData) const;
     QString generateHash(const QString& input) const;
     QByteArray generateHash(const QByteArray& input) const;
 };

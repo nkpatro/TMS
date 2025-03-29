@@ -27,7 +27,7 @@ public:
     void setupRoutes(QHttpServer& server) override;
     QString getControllerName() const override { return "MachineController"; }
 
-    QList<QSharedPointer<MachineModel>> getMachinesByName(const QString &name);
+    QSharedPointer<MachineModel> getMachineByName(const QString &name);
 
 private:
     // HTTP endpoint handlers

@@ -102,10 +102,10 @@ void MachineController::setupRoutes(QHttpServer& server)
         });
 
     // Get machines by name
-    server.route("/api/machines/name/<arg>", QHttpServerRequest::Method::Get,
+    server.route("/api/machine/name/<arg>", QHttpServerRequest::Method::Get,
         [this](const QString &name) {
-            auto response = this->getMachinesByName(name);
-            return createSuccessResponse(machinesToJsonArray(response));
+            auto response = this->getMachineByName(name);
+            return createSuccessResponse(machineToJson(response.data()));
         });
 
     // Get specific machine by ID
@@ -655,9 +655,9 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
         // Finally, try by name
         if (!machine) {
             LOG_DEBUG(QString("Looking for existing machine with name: %1").arg(name));
-            auto machinesByName = m_repository->getMachinesByName(name);
-            if (!machinesByName.isEmpty()) {
-                machine = machinesByName.first();
+            auto machineByName = m_repository->getMachineByName(name);
+            if (!machineByName) {
+                machine = machineByName;
             }
         }
 
@@ -773,21 +773,21 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
     }
 }
 
-QList<QSharedPointer<MachineModel>> MachineController::getMachinesByName(const QString &name)
+QSharedPointer<MachineModel> MachineController::getMachineByName(const QString &name)
 {
     if (!m_initialized) {
         LOG_ERROR("MachineController not initialized");
-        return QList<QSharedPointer<MachineModel>>();
+        return QSharedPointer<MachineModel>();
     }
 
     LOG_DEBUG(QString("Getting machines by name: %1").arg(name));
 
     try {
-        return m_repository->getMachinesByName(name);
+        return m_repository->getMachineByName(name);
     }
     catch (const std::exception &e) {
         LOG_ERROR(QString("Exception getting machines by name: %1").arg(e.what()));
-        return QList<QSharedPointer<MachineModel>>();
+        return QSharedPointer<MachineModel>();
     }
 }
 

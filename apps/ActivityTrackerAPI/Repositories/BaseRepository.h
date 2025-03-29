@@ -587,6 +587,14 @@ public:
         return success;
     }
 
+    /**
+     * @brief Get the database service
+     * @return Pointer to the database service
+     */
+    DbService<T>* getDbService() const {
+        return m_dbService;
+    }
+
 protected:
     /**
      * @brief Create a model from a SQL query result

@@ -2,6 +2,7 @@
 
 // Include all model headers
 #include "Models/UserModel.h"
+#include "Models/TokenModel.h"
 #include "Models/MachineModel.h"
 #include "Models/SessionModel.h"
 #include "Models/ActivityEventModel.h"
@@ -1343,5 +1344,160 @@ void ModelFactory::setDefaultCreatedBy(const QUuid& userId) {
 
 QUuid ModelFactory::getDefaultCreatedBy() {
     return s_defaultCreatedBy;
+}
+
+TokenModel* ModelFactory::createTokenFromQuery(const QSqlQuery& query) {
+    TokenModel* token = new TokenModel();
+
+    // Set primary UUID if available
+    token->setId(getUuidOrDefault(query, "id"));
+
+    token->setTokenId(getStringOrDefault(query, "token_id"));
+    token->setTokenType(getStringOrDefault(query, "token_type"));
+    token->setUserId(getUuidOrDefault(query, "user_id"));
+
+    // Handle JSON fields
+    token->setTokenData(getJsonObjectOrDefault(query, "token_data"));
+    token->setDeviceInfo(getJsonObjectOrDefault(query, "device_info"));
+
+    // Handle date fields
+    token->setExpiresAt(getDateTimeOrDefault(query, "expires_at"));
+    token->setLastUsedAt(getDateTimeOrDefault(query, "last_used_at"));
+
+    // Handle boolean and other fields
+    token->setRevoked(getBoolOrDefault(query, "revoked"));
+    token->setRevocationReason(getStringOrDefault(query, "revocation_reason"));
+
+    // Set base model fields (created_at, created_by, etc.)
+    setBaseModelFields(token, query);
+
+    return token;
+}
+
+TokenModel* ModelFactory::createDefaultToken(const QString& tokenId, const QUuid& userId, const QString& tokenType) {
+    TokenModel* token = new TokenModel();
+
+    // Generate a unique ID
+    token->setId(QUuid::createUuid());
+
+    // Set provided values
+    if (!tokenId.isEmpty()) {
+        token->setTokenId(tokenId);
+    } else {
+        // Generate a random token if none provided
+        token->setTokenId(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    }
+
+    if (!userId.isNull()) {
+        token->setUserId(userId);
+    }
+
+    if (!tokenType.isEmpty()) {
+        token->setTokenType(tokenType);
+    }
+
+    // Default expirations vary by token type
+    QDateTime now = QDateTime::currentDateTimeUtc();
+    if (tokenType == "refresh") {
+        // Refresh tokens typically last longer (30 days)
+        token->setExpiresAt(now.addDays(30));
+    } else if (tokenType == "api") {
+        // API keys typically last even longer (1 year)
+        token->setExpiresAt(now.addDays(365));
+    } else {
+        // Standard user token (24 hours)
+        token->setExpiresAt(now.addDays(1));
+    }
+
+    // Set empty JSON objects for token data and device info
+    token->setTokenData(QJsonObject());
+    token->setDeviceInfo(QJsonObject());
+
+    // Set revocation status
+    token->setRevoked(false);
+    token->setRevocationReason(QString());
+
+    // Set timestamps
+    setCreationTimestamps(token);
+    token->setLastUsedAt(now);
+
+    return token;
+}
+
+bool ModelFactory::validateTokenModel(const TokenModel* model, QStringList& errors) {
+    errors.clear();
+
+    if (model->tokenId().isEmpty()) {
+        errors.append("Token ID is required");
+    }
+
+    if (model->tokenType().isEmpty()) {
+        errors.append("Token type is required");
+    }
+
+    if (model->userId().isNull()) {
+        errors.append("User ID is required");
+    }
+
+    if (!model->expiresAt().isValid()) {
+        errors.append("Expiration time is required and must be valid");
+    }
+
+    // Validate that expiration is in the future
+    if (model->expiresAt() <= QDateTime::currentDateTimeUtc()) {
+        errors.append("Expiration time must be in the future");
+    }
+
+    return errors.isEmpty();
+}
+
+QJsonObject ModelFactory::modelToJson(const TokenModel* model) {
+    if (!model) {
+        return QJsonObject();
+    }
+
+    QJsonObject json;
+    json["id"] = model->id().toString(QUuid::WithoutBraces);
+    json["token_id"] = model->tokenId();
+    json["token_type"] = model->tokenType();
+    json["user_id"] = model->userId().toString(QUuid::WithoutBraces);
+    json["expires_at"] = model->expiresAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toString(Qt::ISODate);
+
+    if (!model->createdBy().isNull()) {
+        json["created_by"] = model->createdBy().toString(QUuid::WithoutBraces);
+    }
+
+    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+
+    if (!model->updatedBy().isNull()) {
+        json["updated_by"] = model->updatedBy().toString(QUuid::WithoutBraces);
+    }
+
+    json["revoked"] = model->isRevoked();
+
+    if (!model->revocationReason().isEmpty()) {
+        json["revocation_reason"] = model->revocationReason();
+    }
+
+    json["last_used_at"] = model->lastUsedAt().toString(Qt::ISODate);
+
+    // Include token data and device info
+    json["token_data"] = model->tokenData();
+    json["device_info"] = model->deviceInfo();
+
+    // Include helper fields for token status
+    json["is_expired"] = model->isExpired();
+    json["is_valid"] = model->isValid();
+
+    return json;
+}
+
+QJsonArray ModelFactory::modelsToJsonArray(const QList<QSharedPointer<TokenModel>>& models) {
+    QJsonArray array;
+    for (const auto& model : models) {
+        array.append(modelToJson(model.data()));
+    }
+    return array;
 }
 

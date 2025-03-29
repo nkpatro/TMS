@@ -27,6 +27,7 @@ include_directories(
 # Define source files by directory
 set(MODELS_SOURCES
         Models/UserModel.cpp
+        Models/TokenModel.cpp
         Models/MachineModel.cpp
         Models/RoleModel.cpp
         Models/ActivityEventModel.cpp
@@ -44,6 +45,7 @@ set(MODELS_SOURCES
 # Define header files by directory
 set(MODELS_HEADERS
         Models/UserModel.h
+        Models/TokenModel.h
         Models/MachineModel.h
         Models/RoleModel.h
         Models/ActivityEventModel.h
@@ -60,6 +62,7 @@ set(MODELS_HEADERS
 
 set(REPOSITORIES_SOURCES
         Repositories/UserRepository.cpp
+        Repositories/TokenRepository.cpp
         Repositories/RoleRepository.cpp
         Repositories/DisciplineRepository.cpp
         Repositories/MachineRepository.cpp
@@ -76,6 +79,7 @@ set(REPOSITORIES_SOURCES
 set(REPOSITORIES_HEADERS
         Repositories/BaseRepository.h
         Repositories/UserRepository.h
+        Repositories/TokenRepository.h
         Repositories/RoleRepository.h
         Repositories/DisciplineRepository.h
         Repositories/MachineRepository.h

@@ -14,6 +14,7 @@
 
 // Forward declarations for all model types
 class UserModel;
+class TokenModel;
 class MachineModel;
 class SessionModel;
 class ActivityEventModel;
@@ -37,6 +38,7 @@ class ModelFactory {
 public:
     // Create models from query results
     static UserModel* createUserFromQuery(const QSqlQuery& query);
+    static TokenModel* createTokenFromQuery(const QSqlQuery& query);
     static MachineModel* createMachineFromQuery(const QSqlQuery& query);
     static SessionModel* createSessionFromQuery(const QSqlQuery& query);
     static ActivityEventModel* createActivityEventFromQuery(const QSqlQuery& query);
@@ -51,6 +53,7 @@ public:
 
     // Create default models
     static UserModel* createDefaultUser(const QString& name = QString(), const QString& email = QString());
+    static TokenModel* createDefaultToken(const QString& tokenId = QString(), const QUuid& userId = QUuid(), const QString& tokenType = "user");
     static MachineModel* createDefaultMachine(const QString& name = QString());
     static SessionModel* createDefaultSession(const QUuid& userId = QUuid(), const QUuid& machineId = QUuid());
     static ActivityEventModel* createDefaultActivityEvent(const QUuid& sessionId = QUuid());
@@ -65,6 +68,7 @@ public:
 
     // Model validation functions
     static bool validateUserModel(const UserModel* model, QStringList& errors);
+    static bool validateTokenModel(const TokenModel* model, QStringList& errors);
     static bool validateMachineModel(const MachineModel* model, QStringList& errors);
     static bool validateSessionModel(const SessionModel* model, QStringList& errors);
     static bool validateActivityEventModel(const ActivityEventModel* model, QStringList& errors);
@@ -83,6 +87,7 @@ public:
 
     // JSON conversion utilities
     static QJsonObject modelToJson(const UserModel* model);
+    static QJsonObject modelToJson(const TokenModel* model);
     static QJsonObject modelToJson(const MachineModel* model);
     static QJsonObject modelToJson(const SessionModel* model);
     static QJsonObject modelToJson(const ActivityEventModel* model);
@@ -96,6 +101,7 @@ public:
     static QJsonObject modelToJson(const UserRoleDisciplineModel* model);
 
     static QJsonArray modelsToJsonArray(const QList<QSharedPointer<UserModel>>& models);
+    static QJsonArray modelsToJsonArray(const QList<QSharedPointer<TokenModel>>& models);
     static QJsonArray modelsToJsonArray(const QList<QSharedPointer<MachineModel>>& models);
     static QJsonArray modelsToJsonArray(const QList<QSharedPointer<SessionModel>>& models);
     static QJsonArray modelsToJsonArray(const QList<QSharedPointer<ActivityEventModel>>& models);

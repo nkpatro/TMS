@@ -9,6 +9,8 @@
 #include <QDateTime>
 #include <QJsonObject>
 
+class SessionEventRepository;
+
 class SessionRepository : public BaseRepository<SessionModel>
 {
     Q_OBJECT
@@ -23,7 +25,13 @@ public:
 
     // Session management
     bool createSessionWithTransaction(SessionModel *session);
-    bool endSession(const QUuid &sessionId, const QDateTime &logoutTime = QDateTime::currentDateTimeUtc());
+    // bool safeEndSession(const QUuid &sessionId, const QDateTime &logoutTime = QDateTime::currentDateTimeUtc());
+    // bool safeReopenSession(const QUuid &sessionId, const QDateTime &updateTime = QDateTime::currentDateTimeUtc());
+    bool safeEndSession(const QUuid &sessionId, const QDateTime &logoutTime = QDateTime::currentDateTimeUtc(), SessionEventRepository* eventRepository = nullptr);
+    bool safeReopenSession(const QUuid &sessionId, const QDateTime &updateTime = QDateTime::currentDateTimeUtc(), SessionEventRepository* eventRepository = nullptr);
+    bool createSessionLoginEvent(const QUuid &sessionId, const QUuid &userId, const QUuid &machineId, const QDateTime &loginTime, SessionEventRepository* eventRepository, bool isRemote = false, const QString& terminalSessionId = QString());
+    bool hasLoginEvent(const QUuid &sessionId, SessionEventRepository* eventRepository);
+    bool hasLogoutEvent(const QUuid &sessionId, SessionEventRepository* eventRepository);
 
     // Session chain operations
     bool continueSession(const QUuid &previousSessionId, const QUuid &newSessionId);
@@ -46,6 +54,8 @@ public:
         bool isRemote = false,
         const QString& terminalSessionId = QString());
 
+    void setSessionEventRepository(SessionEventRepository* sessionEventRepository) { m_sessionEventRepository = sessionEventRepository; }
+
 protected:
     // Required BaseRepository abstract method implementations
     QString getEntityName() const override;
@@ -58,6 +68,9 @@ protected:
     QMap<QString, QVariant> prepareParamsForSave(SessionModel* model) override;
     QMap<QString, QVariant> prepareParamsForUpdate(SessionModel* model) override;
     SessionModel* createModelFromQuery(const QSqlQuery &query) override;
+
+private:
+    SessionEventRepository* m_sessionEventRepository = nullptr;
 };
 
 #endif // SESSIONREPOSITORY_H

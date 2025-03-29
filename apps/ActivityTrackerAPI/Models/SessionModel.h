@@ -32,6 +32,7 @@ class SessionModel : public QObject
 
 public:
     explicit SessionModel(QObject *parent = nullptr);
+    QString debugInfo() const;
 
     QUuid id() const;
     void setId(const QUuid &id);

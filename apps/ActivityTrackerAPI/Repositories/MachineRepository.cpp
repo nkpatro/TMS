@@ -194,13 +194,13 @@ QSharedPointer<MachineModel> MachineRepository::getByMacAddress(const QString& m
     }
 }
 
-QList<QSharedPointer<MachineModel>> MachineRepository::getMachinesByName(const QString& name)
+QSharedPointer<MachineModel> MachineRepository::getMachineByName(const QString& name)
 {
     LOG_DEBUG(QString("Getting machines by name: %1").arg(name));
 
     if (!isInitialized()) {
         LOG_ERROR("Cannot get machines by name: Repository not initialized");
-        return QList<QSharedPointer<MachineModel>>();
+        return QSharedPointer<MachineModel>();
     }
 
     QMap<QString, QVariant> params;
@@ -208,7 +208,7 @@ QList<QSharedPointer<MachineModel>> MachineRepository::getMachinesByName(const Q
 
     QString query = "SELECT * FROM machines WHERE name = :name ORDER BY last_seen_at DESC";
 
-    auto machines = m_dbService->executeSelectQuery(
+    auto machine = m_dbService->executeSingleSelectQuery(
         query,
         params,
         [this](const QSqlQuery& query) -> MachineModel* {
@@ -216,13 +216,14 @@ QList<QSharedPointer<MachineModel>> MachineRepository::getMachinesByName(const Q
         }
     );
 
-    QList<QSharedPointer<MachineModel>> result;
-    for (auto machine : machines) {
-        result.append(QSharedPointer<MachineModel>(machine));
+    if (machine) {
+        LOG_INFO(QString("Machine found with the name : %1").arg((*machine)->name()));
+        return QSharedPointer<MachineModel>(*machine);
+    } else {
+        LOG_DEBUG(QString("Machine not found with name: %1").arg(name));
+        return nullptr;
     }
 
-    LOG_INFO(QString("Retrieved %1 machines with name: %2").arg(result.size()).arg(name));
-    return result;
 }
 
 QList<QSharedPointer<MachineModel>> MachineRepository::getActiveMachines()

@@ -697,3 +697,22 @@ SELECT create_future_partitions();
 
 COMMENT ON DATABASE activity_tracker IS 'Activity tracking database with partitioned tables for high-volume data';
 
+-- Token storage table for persistent authentication
+CREATE TABLE IF NOT EXISTS auth_tokens (
+                                           token_id VARCHAR(64) PRIMARY KEY,   -- The token string (hashed if needed)
+    token_type VARCHAR(20) NOT NULL,    -- 'user', 'service', 'refresh', 'api'
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    token_data JSONB NOT NULL,          -- All token metadata
+    expires_at TIMESTAMPTZ NOT NULL,    -- Expiration timestamp
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    revoked BOOLEAN DEFAULT false,      -- For token revocation
+    revocation_reason VARCHAR(255),     -- Optional reason for revocation
+    device_info JSONB,                  -- Device information
+    last_used_at TIMESTAMPTZ            -- Track when token was last used
+    );
+
+-- Indexes for token table
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_revoked ON auth_tokens(revoked) WHERE revoked = false;
+

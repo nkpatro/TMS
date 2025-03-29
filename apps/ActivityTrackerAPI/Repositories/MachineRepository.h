@@ -17,7 +17,7 @@ public:
     // BaseRepository implementation
     QSharedPointer<MachineModel> getByUniqueId(const QString& uniqueId);
     QSharedPointer<MachineModel> getByMacAddress(const QString& macAddress);
-    QList<QSharedPointer<MachineModel>> getMachinesByName(const QString& name);
+    QSharedPointer<MachineModel> getMachineByName(const QString& name);
     QList<QSharedPointer<MachineModel>> getActiveMachines();
     bool updateLastSeen(const QUuid& id, const QDateTime& timestamp = QDateTime::currentDateTimeUtc());
 

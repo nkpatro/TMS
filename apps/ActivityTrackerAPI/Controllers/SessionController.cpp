@@ -129,6 +129,11 @@ bool SessionController::initialize()
             // We don't return false here because it's optional
         }
 
+        if (m_sessionEventRepository && m_repository) {
+            m_repository->setSessionEventRepository(m_sessionEventRepository);
+            LOG_DEBUG("Linked SessionEventRepository to SessionRepository");
+        }
+
         m_initialized = true;
         LOG_INFO("SessionController initialized successfully");
         return true;
