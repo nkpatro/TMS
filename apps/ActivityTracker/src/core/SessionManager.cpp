@@ -970,7 +970,22 @@ bool SessionManager::processBatchData(const QUuid &sessionId, const QJsonArray &
     return m_apiManager->processSessionBatch(sessionId, batchData, responseData);
 }
 
+void SessionManager::setMultiUserManager(MultiUserManager* userManager)
+{
+    if (userManager != m_multiUserManager) {
+        LOG_INFO("Setting MultiUserManager in SessionManager");
+        m_multiUserManager = userManager;
+    }
+}
+
 MultiUserManager* SessionManager::getMultiUserManager() const
 {
-    return m_multiUserManager;
+    // If we have a MultiUserManager set, return it
+    if (m_multiUserManager) {
+        return m_multiUserManager;
+    }
+
+    // If no MultiUserManager was explicitly set, log a warning
+    LOG_WARNING("MultiUserManager requested but not set in SessionManager");
+    return nullptr;
 }

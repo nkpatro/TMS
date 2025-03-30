@@ -81,6 +81,9 @@ public:
     QString getMachineId() const { return m_machineId; }
     void updateMachineId(const QString &machineId) { m_machineId = machineId; }
 
+    void setMultiUserManager(MultiUserManager* userManager);
+    MultiUserManager* getMultiUserManager() const;
+
 private:
     enum class DataType {
         SessionEvent,
@@ -106,7 +109,6 @@ private:
     QString m_machineId;
     QUuid m_activeAfkPeriodId;
     MultiUserManager* m_multiUserManager;
-    MultiUserManager* getMultiUserManager() const;
 
     // Local cache for active sessions and app usages
     QMap<QUuid, QDateTime> m_sessionStarts;

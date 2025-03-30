@@ -141,7 +141,7 @@ bool ConfigManager::loadLocalConfig()
         m_dataSendInterval = m_settings->value("DataSendInterval", m_dataSendInterval).toInt();
         m_idleTimeThreshold = m_settings->value("IdleTimeThreshold", m_idleTimeThreshold).toInt();
         m_machineId = m_settings->value("MachineId", m_machineId).toString();
-        m_machineUniqueId = m_settings->value("MachineId", m_machineUniqueId).toString();
+        m_machineUniqueId = m_settings->value("MachineUniqueId", m_machineUniqueId).toString();
         m_trackKeyboardMouse = m_settings->value("TrackKeyboardMouse", m_trackKeyboardMouse).toBool();
         m_trackApplications = m_settings->value("TrackApplications", m_trackApplications).toBool();
         m_trackSystemMetrics = m_settings->value("TrackSystemMetrics", m_trackSystemMetrics).toBool();
@@ -164,6 +164,7 @@ bool ConfigManager::loadLocalConfig()
         // Auto-generate machine ID if not set
         if (m_machineUniqueId.isEmpty()) {
             m_machineUniqueId = QSysInfo::machineUniqueId();
+            m_settings->setValue("MachineUniqueId", m_machineUniqueId);
             m_settings->sync();
         }
     } // QMutexLocker released here
@@ -209,6 +210,7 @@ bool ConfigManager::saveLocalConfig()
         m_settings->setValue("DataSendInterval", m_dataSendInterval);
         m_settings->setValue("IdleTimeThreshold", m_idleTimeThreshold);
         m_settings->setValue("MachineId", m_machineId);
+        m_settings->setValue("MachineUniqueId", m_machineUniqueId);
         m_settings->setValue("TrackKeyboardMouse", m_trackKeyboardMouse);
         m_settings->setValue("TrackApplications", m_trackApplications);
         m_settings->setValue("TrackSystemMetrics", m_trackSystemMetrics);

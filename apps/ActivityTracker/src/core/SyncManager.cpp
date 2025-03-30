@@ -10,6 +10,8 @@
 #include <QSysInfo>
 #include <QNetworkInterface>
 
+#include "src/service/MultiUserManager.h"
+
 SyncManager::SyncManager(APIManager* apiManager, SessionManager* sessionManager, QObject *parent)
     : QObject(parent)
     , m_apiManager(apiManager)
@@ -119,20 +121,47 @@ bool SyncManager::createOrReopenSession(const QDate& date, QUuid& sessionId, QDa
         return false;
     }
     
+    // Get the current user from SessionManager
+    QString currentUser = m_sessionManager->getUsername();
+
+    // Check if we have a MultiUserManager available
+    MultiUserManager* multiUserManager = m_sessionManager->getMultiUserManager();
+
     // First, ensure server connectivity
     bool isConnected = false;
     if (!m_offlineMode && m_sessionManager->checkServerConnection(isConnected) && isConnected) {
         // We're online, try to use server API
 
-        // Check if we're authenticated
-        if (!m_apiManager->isAuthenticated()) {
+        // Check if we're authenticated for the current user
+        bool isAuthenticated = false;
+
+        if (multiUserManager) {
+            // Use MultiUserManager to check for existing authentication
+            isAuthenticated = multiUserManager->hasUserAuthToken(currentUser);
+
+            if (isAuthenticated) {
+                // Set the token in the APIManager
+                QString token = multiUserManager->getUserAuthToken(currentUser);
+                if (!token.isEmpty()) {
+                    m_apiManager->setAuthToken(token);
+                    isAuthenticated = true;
+                    LOG_INFO(QString("Using existing auth token for user '%1'").arg(currentUser));
+                } else {
+                    isAuthenticated = false;
+                }
+            }
+        } else {
+            // Fall back to API Manager check
+            isAuthenticated = m_apiManager->isAuthenticated();
+        }
+
+        if (!isAuthenticated) {
             LOG_INFO("Not authenticated, attempting authentication");
 
-            // Get username and machineId from the session manager
-            QString username = m_sessionManager->getUsername();
+            // Get machineId from the session manager
             QString machineId = m_sessionManager->getMachineId();
 
-            if (username.isEmpty() || machineId.isEmpty()) {
+            if (currentUser.isEmpty() || machineId.isEmpty()) {
                 LOG_ERROR("Username or machineId not set");
                 m_offlineMode = true;
                 emit connectionStateChanged(false);
@@ -144,11 +173,21 @@ bool SyncManager::createOrReopenSession(const QDate& date, QUuid& sessionId, QDa
                 return true;
             }
 
-            // Try to authenticate
-            QJsonObject responseData;
-            bool success = m_apiManager->authenticate(username, machineId, responseData);
+            // Try to authenticate, preferably through MultiUserManager
+            bool authSuccess = false;
 
-            if (!success) {
+            if (multiUserManager) {
+                authSuccess = multiUserManager->authenticateUser(currentUser, machineId, m_apiManager);
+            } else {
+                // Fall back to direct authentication
+                QJsonObject responseData;
+                authSuccess = m_apiManager->authenticate(currentUser, machineId, responseData);
+
+                // Since we're not using MultiUserManager, we need to store the token somewhere
+                // It's already stored in the APIManager from the authenticate call
+            }
+
+            if (!authSuccess) {
                 LOG_ERROR("Authentication failed");
                 m_offlineMode = true;
                 emit connectionStateChanged(false);
