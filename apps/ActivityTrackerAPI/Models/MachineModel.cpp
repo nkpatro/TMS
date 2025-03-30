@@ -6,7 +6,7 @@ MachineModel::MachineModel(QObject *parent)
       m_ramSizeGB(0),
       m_active(true)
 {
-    m_id = QUuid::createUuid();
+    m_id = QUuid();
     m_lastSeenAt = QDateTime::currentDateTimeUtc();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();

@@ -103,48 +103,63 @@ public:
             return false;
         }
 
+        // Check if this is a new record (null ID) or an existing one with ID
+        bool isNewRecord = model->id().isNull();
+
         // Prepare query parameters
         QMap<QString, QVariant> params = prepareParamsForSave(model);
 
-        // Build query
-        QString query = buildSaveQuery();
-
-        // Execute query
-        bool success = m_dbService->executeModificationQuery(query, params);
-
-        if (success) {
-            // If the query returns the new ID, update the model
-            if (query.toLower().contains("returning id") && model->id().isNull()) {
-                // This is database-specific and may need adjustment
-                QMap<QString, QVariant> idParams;
-
-                // For checking the last inserted ID - this approach varies by database
-                QString idQuery = "SELECT lastval()";
-                auto result = m_dbService->executeSingleSelectQuery(
-                    idQuery,
-                    idParams,
-                    [](const QSqlQuery& query) -> T* {
-                        T* idResult = new T();
-                        if (!query.value(0).isNull()) {
-                            idResult->setId(QUuid(query.value(0).toString()));
-                        }
-                        return idResult;
-                    }
-                );
-
-                if (result && !(*result)->id().isNull()) {
-                    model->setId((*result)->id());
-                    delete *result;
-                }
-            }
-
-            LOG_INFO(QString("%1 saved successfully: %2").arg(getEntityName(), getModelId(model)));
+        // Build query - if new record and ID is null, we'll use RETURNING to get the generated ID
+        QString query;
+        if (isNewRecord) {
+            query = buildSaveQueryWithReturning();
         } else {
-            LOG_ERROR(QString("Failed to save %1: %2 - %3")
-                     .arg(getEntityName(), getModelId(model), m_dbService->lastError()));
+            query = buildSaveQuery();
         }
 
-        return success;
+        // For new records with null IDs, we expect the DB to generate the ID
+        if (isNewRecord && model->id().isNull()) {
+            // Execute query that returns the generated ID
+            QUuid generatedId;
+            bool success = m_dbService->executeInsertWithReturningId(
+                query,
+                params,
+                getIdParamName(), // Use existing method to get column name
+                [&generatedId](const QVariant& value) {
+                    generatedId = QUuid(value.toString());
+                }
+            );
+
+            if (success) {
+                // Update the model with the generated ID
+                if (!generatedId.isNull()) {
+                    model->setId(generatedId);
+                    LOG_INFO(QString("%1 saved successfully with database-generated ID: %2")
+                            .arg(getEntityName(), generatedId.toString()));
+                } else {
+                    LOG_WARNING(QString("%1 saved but failed to retrieve generated ID")
+                               .arg(getEntityName()));
+                }
+            } else {
+                LOG_ERROR(QString("Failed to save %1: %2")
+                         .arg(getEntityName(), m_dbService->lastError()));
+            }
+
+            return success;
+        } else {
+            // For existing records or when ID is already set, use standard insert
+            bool success = m_dbService->executeModificationQuery(query, params);
+
+            if (success) {
+                LOG_INFO(QString("%1 saved successfully with ID: %2")
+                        .arg(getEntityName(), getModelId(model)));
+            } else {
+                LOG_ERROR(QString("Failed to save %1: %2 - %3")
+                         .arg(getEntityName(), getModelId(model), m_dbService->lastError()));
+            }
+
+            return success;
+        }
     }
 
     /**
@@ -596,6 +611,24 @@ public:
     }
 
 protected:
+
+    /**
+     * @brief Build the SQL query for saving with RETURNING clause
+     * @return SQL query string
+     */
+    virtual QString buildSaveQueryWithReturning() {
+        QString baseQuery = buildSaveQuery();
+
+        // Check if the query already has a RETURNING clause
+        if (!baseQuery.contains("RETURNING", Qt::CaseInsensitive)) {
+            // Add RETURNING clause if not present
+            return baseQuery + " RETURNING " + getIdParamName();
+        }
+
+        // Already has a RETURNING clause, return as is
+        return baseQuery;
+    }
+
     /**
      * @brief Create a model from a SQL query result
      * @param query The SQL query result

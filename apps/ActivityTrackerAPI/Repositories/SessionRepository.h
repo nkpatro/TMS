@@ -25,13 +25,14 @@ public:
 
     // Session management
     bool createSessionWithTransaction(SessionModel *session);
-    // bool safeEndSession(const QUuid &sessionId, const QDateTime &logoutTime = QDateTime::currentDateTimeUtc());
-    // bool safeReopenSession(const QUuid &sessionId, const QDateTime &updateTime = QDateTime::currentDateTimeUtc());
     bool safeEndSession(const QUuid &sessionId, const QDateTime &logoutTime = QDateTime::currentDateTimeUtc(), SessionEventRepository* eventRepository = nullptr);
     bool safeReopenSession(const QUuid &sessionId, const QDateTime &updateTime = QDateTime::currentDateTimeUtc(), SessionEventRepository* eventRepository = nullptr);
     bool createSessionLoginEvent(const QUuid &sessionId, const QUuid &userId, const QUuid &machineId, const QDateTime &loginTime, SessionEventRepository* eventRepository, bool isRemote = false, const QString& terminalSessionId = QString());
     bool hasLoginEvent(const QUuid &sessionId, SessionEventRepository* eventRepository);
+    bool hasLoginEvent(const QUuid &sessionId, const QDateTime &loginTime, SessionEventRepository* eventRepository);
     bool hasLogoutEvent(const QUuid &sessionId, SessionEventRepository* eventRepository);
+    bool hasLogoutEvent(const QUuid &sessionId, const QDateTime &logoutTime, SessionEventRepository* eventRepository);
+    bool verifyLoginLogoutPairs(const QUuid &sessionId, SessionEventRepository* eventRepository);
 
     // Session chain operations
     bool continueSession(const QUuid &previousSessionId, const QUuid &newSessionId);

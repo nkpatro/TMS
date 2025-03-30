@@ -42,7 +42,7 @@ $$;
 
 -- Create users table if not exists - aligned with UserModel
 CREATE TABLE IF NOT EXISTS users (
-                                     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS tracked_applications_disciplines (
 
 -- Create machines table
 CREATE TABLE IF NOT EXISTS machines (
-                                        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     machine_unique_id VARCHAR(255) NOT NULL,
     mac_address VARCHAR(100),
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS machines (
 
 -- Create user_role_disciplines table to manage the relationship separately
 CREATE TABLE IF NOT EXISTS user_role_disciplines (
-                                                     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id uuid REFERENCES users(id) NOT NULL,
     role_id uuid REFERENCES roles(id) NOT NULL,
     discipline_id uuid REFERENCES disciplines(id) NOT NULL,
@@ -175,7 +175,7 @@ CREATE TABLE IF NOT EXISTS user_role_disciplines (
 
 -- Create sessions table if not exists
 CREATE TABLE IF NOT EXISTS sessions (
-                                        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id uuid REFERENCES users(id) NOT NULL,
     machine_id uuid REFERENCES machines(id),
     login_time TIMESTAMPTZ NOT NULL,
@@ -211,7 +211,7 @@ ALTER TABLE sessions
 
 -- Create afk_periods table if not exists
 CREATE TABLE IF NOT EXISTS afk_periods (
-                                           id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     session_id uuid REFERENCES sessions(id) ON DELETE CASCADE,
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ,
@@ -298,7 +298,7 @@ $$;
 
 -- Create maintenance_history table if not exists
 CREATE TABLE IF NOT EXISTS maintenance_history (
-                                                   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     task_name text NOT NULL,
     start_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_time TIMESTAMPTZ,
@@ -699,7 +699,7 @@ COMMENT ON DATABASE activity_tracker IS 'Activity tracking database with partiti
 
 -- Token storage table for persistent authentication
 CREATE TABLE IF NOT EXISTS auth_tokens (
-                                           token_id VARCHAR(64) PRIMARY KEY,   -- The token string (hashed if needed)
+    token_id VARCHAR(64) PRIMARY KEY,   -- The token string (hashed if needed)
     token_type VARCHAR(20) NOT NULL,    -- 'user', 'service', 'refresh', 'api'
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     token_data JSONB NOT NULL,          -- All token metadata

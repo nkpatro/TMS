@@ -656,7 +656,7 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
         if (!machine) {
             LOG_DEBUG(QString("Looking for existing machine with name: %1").arg(name));
             auto machineByName = m_repository->getMachineByName(name);
-            if (!machineByName) {
+            if (machineByName) {
                 machine = machineByName;
             }
         }
