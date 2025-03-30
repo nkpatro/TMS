@@ -385,3 +385,74 @@ QSqlQuery DbService<T>::createQuery() {
     return QSqlQuery(m_db);
 }
 
+/**
+ * @brief Execute an INSERT query with a RETURNING clause and get the returned ID
+ * @param query SQL query string with RETURNING clause
+ * @param params Query parameters
+ * @param idColumnName Name of the ID column being returned
+ * @param idHandler Function to handle the returned ID value
+ * @return True if insertion was successful
+ */
+template<typename T>
+bool DbService<T>::executeInsertWithReturningId(
+    const QString& query,
+    const QMap<QString, QVariant>& params,
+    const QString& idColumnName,
+    std::function<void(const QVariant&)> idHandler)
+{
+    if (!ensureConnected()) {
+        LOG_ERROR("Cannot execute query, database is not connected");
+        return false;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+
+    try {
+        QSqlQuery sqlQuery(m_db);
+        if (!sqlQuery.prepare(query)) {
+            LOG_ERROR(QString("Query preparation failed: %1\nQuery: %2")
+                     .arg(sqlQuery.lastError().text(), query));
+            return false;
+        }
+
+        // Bind parameters
+        for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
+            sqlQuery.bindValue(":" + it.key(), it.value());
+        }
+
+        // Execute the query
+        if (!sqlQuery.exec()) {
+            LOG_ERROR(QString("Query failed: %1\nQuery: %2")
+                     .arg(sqlQuery.lastError().text(), query));
+            QMap<QString, QVariant> errorParams;
+            for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
+                errorParams[it.key()] = it.value();
+            }
+            LOG_DATA(Logger::Error, errorParams);
+            return false;
+        }
+
+        // Get the returned ID
+        if (sqlQuery.next()) {
+            QVariant idValue = sqlQuery.value(idColumnName);
+            if (!idValue.isNull()) {
+                idHandler(idValue);
+                LOG_DEBUG(QString("Retrieved ID from RETURNING clause: %1").arg(idValue.toString()));
+            } else {
+                LOG_WARNING(QString("NULL value returned for %1").arg(idColumnName));
+            }
+        } else {
+            LOG_WARNING("No rows returned from INSERT with RETURNING clause");
+        }
+
+        LOG_DEBUG(QString("Query with RETURNING executed in %1 ms").arg(timer.elapsed()));
+        return true;
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(QString("Exception during query execution: %1\nQuery: %2")
+                 .arg(ex.what(), query));
+        return false;
+    }
+}
+

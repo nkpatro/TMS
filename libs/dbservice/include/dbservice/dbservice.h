@@ -16,7 +16,7 @@ public:
     ~DbService();
 
     // Execute a SELECT query and return multiple results
-    QList<T*> executeSelectQuery(  // Changed from QVector to QList
+    QList<T*> executeSelectQuery(
         const QString& queryStr,
         const QMap<QString, QVariant>& params,
         const QueryProcessor& processor);
@@ -31,6 +31,13 @@ public:
     bool executeModificationQuery(
         const QString& queryStr,
         const QMap<QString, QVariant>& params);
+
+    // Execute an INSERT query with a RETURNING clause and get the returned ID
+    bool executeInsertWithReturningId(
+        const QString& query,
+        const QMap<QString, QVariant>& params,
+        const QString& idColumnName,
+        std::function<void(const QVariant&)> idHandler);
 
     // Begin a transaction
     bool beginTransaction();
