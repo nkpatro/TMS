@@ -31,7 +31,8 @@ QString SessionEventRepository::buildSaveQuery()
            "(:session_id, :event_type, :event_time, :user_id, "
            ":previous_user_id, :machine_id, :terminal_session_id, :is_remote::boolean, "
            ":event_data, :created_at, :created_by, :updated_at, "
-           ":updated_by)";
+           ":updated_by) "
+           "RETURNING id";
 }
 
 QString SessionEventRepository::buildUpdateQuery()
@@ -446,3 +447,63 @@ EventTypes::SessionEventType SessionEventRepository::stringToEventType(const QSt
         return EventTypes::SessionEventType::Login;
     }
 }
+
+// Find the save method which should look something like this
+bool SessionEventRepository::save(SessionEventModel* event)
+{
+    if (!ensureInitialized()) {
+        LOG_ERROR("Cannot save SessionEvent: repository not initialized");
+        return false;
+    }
+
+    // Validate event before saving
+    QStringList validationErrors;
+    if (!validateModel(event, validationErrors)) {
+        LOG_ERROR(QString("Cannot save SessionEvent: validation failed - %1")
+                 .arg(validationErrors.join(", ")));
+        return false;
+    }
+
+    // Prepare query parameters
+    QMap<QString, QVariant> params = prepareParamsForSave(event);
+
+    // Build query
+    QString query = buildSaveQuery();
+
+    // Enhanced debugging - log entire query with parameters
+    logQueryWithValues(query, params);
+
+    // Execute query
+    bool success = m_dbService->executeModificationQuery(query, params);
+
+    if (success) {
+        LOG_INFO(QString("SessionEvent saved successfully: %1").arg(event->id().toString()));
+    } else {
+        // Enhanced error logging
+        LOG_ERROR(QString("Failed to save SessionEvent: %1").arg(event->id().toString()));
+        LOG_ERROR(QString("Database error: %1").arg(m_dbService->lastError()));
+
+        // Log specific parameter information that might be causing issues
+        LOG_ERROR("Checking critical parameters:");
+        LOG_ERROR(QString("- session_id: %1").arg(params["session_id"].toString()));
+        LOG_ERROR(QString("- event_type: %1").arg(params["event_type"].toString()));
+        LOG_ERROR(QString("- event_time: %1").arg(params["event_time"].toString()));
+
+        // Check DB connection
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isOpen()) {
+            LOG_ERROR("Database connection is closed!");
+        } else {
+            LOG_ERROR(QString("Database connection is open. Name: %1, Driver: %2")
+                     .arg(db.connectionName(), db.driverName()));
+
+            // Try to check if the session_events table exists
+            QStringList tables = db.tables();
+            LOG_ERROR(QString("Found tables: %1").arg(tables.join(", ")));
+            LOG_ERROR(QString("session_events table exists: %1").arg(tables.contains("session_events") ? "yes" : "NO"));
+        }
+    }
+
+    return success;
+}
+

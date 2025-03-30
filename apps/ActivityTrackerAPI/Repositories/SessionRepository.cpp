@@ -81,7 +81,8 @@ QString SessionRepository::buildSaveQuery()
            "VALUES "
            "(:user_id, :login_time, :logout_time, :machine_id, "
            ":ip_address, :session_data, :created_at, :created_by, :updated_at, :updated_by, "
-           ":continued_from_session, :continued_by_session, :previous_session_end_time, :time_since_previous_session)";
+           ":continued_from_session, :continued_by_session, :previous_session_end_time, :time_since_previous_session) "
+           "RETURNING id";
 }
 
 QString SessionRepository::buildUpdateQuery()
@@ -948,7 +949,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     LOG_WARNING(QString("Reopened session %1 is missing original login event. Creating one.")
                               .arg(todaySession->id().toString()));
 
-                    createSessionLoginEvent(
+                    bool eventSuccess = createSessionLoginEvent(
                         todaySession->id(),
                         userId,
                         machineId,
@@ -957,6 +958,12 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                         isRemote,
                         terminalSessionId
                     );
+
+                    if (!eventSuccess) {
+                        LOG_ERROR(QString("Failed to create login event for reopened session %1")
+                            .arg(todaySession->id().toString()));
+                        // Continue anyway, as we have a backup below
+                    }
                 }
 
                 // Create a login event for the current reopen time
@@ -997,6 +1004,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     if (!eventSuccess) {
                         LOG_WARNING(QString("Failed to create login event for reopened session %1")
                                   .arg(todaySession->id().toString()));
+                        // Continue anyway since session creation is more important
                     }
                 }
             }
@@ -1017,7 +1025,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     LOG_WARNING(QString("Active session %1 is missing login event. Creating one for original login time.")
                               .arg(todaySession->id().toString()));
 
-                    createSessionLoginEvent(
+                    bool eventSuccess = createSessionLoginEvent(
                         todaySession->id(),
                         userId,
                         machineId,
@@ -1026,6 +1034,12 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                         isRemote,
                         terminalSessionId
                     );
+
+                    if (!eventSuccess) {
+                        LOG_ERROR(QString("Failed to create login event for existing session %1")
+                            .arg(todaySession->id().toString()));
+                        // Continue anyway, as we can try again below
+                    }
                 }
 
                 // Create a login event for this current login time if it doesn't exist
@@ -1068,6 +1082,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     if (!eventSuccess) {
                         LOG_WARNING(QString("Failed to create additional login event for session %1")
                                   .arg(todaySession->id().toString()));
+                        // Continue anyway, as the original login event exists
                     }
                 }
             }
@@ -1141,7 +1156,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     eventRepo = m_sessionEventRepository;
                 }
                 if (eventRepo && eventRepo->isInitialized()) {
-                    createSessionLoginEvent(
+                    bool eventSuccess = createSessionLoginEvent(
                         newSession->id(),
                         userId,
                         machineId,
@@ -1150,6 +1165,12 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                         isRemote,
                         terminalSessionId
                     );
+
+                    if (!eventSuccess) {
+                        LOG_ERROR(QString("Failed to create login event for new session %1")
+                            .arg(newSession->id().toString()));
+                        // We'll attempt to create this outside the transaction if needed
+                    }
                 }
             } else {
                 LOG_ERROR("New session has missing required fields");
@@ -1166,6 +1187,25 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
     if (!success) {
         LOG_ERROR("Transaction failed during session creation/reuse");
         return nullptr;
+    }
+
+    // If we have a session but no login event was created (possibly due to transaction issues),
+    // create the login event outside the transaction as a fallback
+    if (resultSession && m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
+        if (!hasLoginEvent(resultSession->id(), m_sessionEventRepository)) {
+            LOG_WARNING(QString("No login event found for session %1 after transaction. Creating one now as fallback.")
+                .arg(resultSession->id().toString()));
+
+            createSessionLoginEvent(
+                resultSession->id(),
+                userId,
+                machineId,
+                resultSession->loginTime(),  // Use the session's login time
+                m_sessionEventRepository,
+                isRemote,
+                terminalSessionId
+            );
+        }
     }
 
     return resultSession;
@@ -1461,36 +1501,62 @@ bool SessionRepository::createSessionLoginEvent(
         return true; // Already exists, no need to create
     }
 
-    SessionEventModel* event = new SessionEventModel();
-    event->setId(QUuid::createUuid());
-    event->setSessionId(sessionId);
-    event->setEventType(EventTypes::SessionEventType::Login);
-    event->setEventTime(loginTime);
-    event->setUserId(userId);
-    event->setMachineId(machineId);
-    event->setIsRemote(isRemote);
+    // Create the login event with retry logic
+    const int MAX_RETRIES = 3;
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        SessionEventModel* event = new SessionEventModel();
 
-    if (!terminalSessionId.isEmpty()) {
-        event->setTerminalSessionId(terminalSessionId);
+        // Generate a new UUID for each attempt
+        event->setId(QUuid::createUuid());
+        event->setSessionId(sessionId);
+        event->setEventType(EventTypes::SessionEventType::Login);
+        event->setEventTime(loginTime);
+        event->setUserId(userId);
+        event->setMachineId(machineId);
+        event->setIsRemote(isRemote);
+
+        if (!terminalSessionId.isEmpty()) {
+            event->setTerminalSessionId(terminalSessionId);
+        }
+
+        // Add context data for troubleshooting
+        QJsonObject eventData;
+        if (attempt > 1) {
+            eventData["retry_attempt"] = attempt;
+        }
+        event->setEventData(eventData);
+
+        // Set metadata
+        QDateTime currentTime = QDateTime::currentDateTimeUtc();
+        event->setCreatedBy(userId);
+        event->setUpdatedBy(userId);
+        event->setCreatedAt(currentTime);
+        event->setUpdatedAt(currentTime);
+
+        bool success = eventRepository->save(event);
+        delete event;  // Clean up regardless of success
+
+        if (success) {
+            LOG_INFO(QString("Login event created for session: %1 at time: %2%3")
+                    .arg(sessionId.toString(), loginTime.toString(Qt::ISODate))
+                    .arg(attempt > 1 ? QString(" (attempt %1)").arg(attempt) : ""));
+            return true;
+        }
+        else if (attempt < MAX_RETRIES) {
+            LOG_WARNING(QString("Failed to create login event for session: %1 (attempt %2), retrying...")
+                      .arg(sessionId.toString())
+                      .arg(attempt));
+            // Brief delay before retry
+            QThread::msleep(100 * attempt);  // Increasing delay with each attempt
+        }
+        else {
+            LOG_ERROR(QString("Failed to create login event for session: %1 after %2 attempts")
+                    .arg(sessionId.toString())
+                    .arg(MAX_RETRIES));
+        }
     }
 
-    // Set event metadata
-    event->setCreatedAt(QDateTime::currentDateTimeUtc());
-    event->setUpdatedAt(QDateTime::currentDateTimeUtc());
-    event->setCreatedBy(userId);
-    event->setUpdatedBy(userId);
-
-    bool success = eventRepository->save(event);
-    delete event;
-
-    if (success) {
-        LOG_INFO(QString("Login event created for session: %1 at time: %2")
-                .arg(sessionId.toString(), loginTime.toString(Qt::ISODate)));
-    } else {
-        LOG_WARNING(QString("Failed to create login event for session: %1").arg(sessionId.toString()));
-    }
-
-    return success;
+    return false;
 }
 
 bool SessionRepository::hasLoginEvent(const QUuid &sessionId, SessionEventRepository* eventRepository)
@@ -1505,24 +1571,28 @@ bool SessionRepository::hasLoginEvent(const QUuid &sessionId, const QDateTime &l
         return false;
     }
 
-    LOG_DEBUG(QString("Checking for login events for session: %1 at specific time: %2")
-              .arg(sessionId.toString(), loginTime.isValid() ? loginTime.toString(Qt::ISODate) : "any time"));
+    LOG_DEBUG(QString("Checking for login events for session: %1%2")
+              .arg(sessionId.toString())
+              .arg(loginTime.isValid() ?
+                   QString(" at specific time: %1").arg(loginTime.toString(Qt::ISODate)) :
+                   " at any time"));
 
-    // Query the events repository directly for events with this session ID
-    QList<QSharedPointer<SessionEventModel>> events = eventRepository->getBySessionId(sessionId);
+    // Get all events for this session
+    // Limit results to improve performance - we likely don't need to check thousands of events
+    QList<QSharedPointer<SessionEventModel>> events = eventRepository->getBySessionId(sessionId, 100);
+
+    // The time tolerance (in seconds) for timestamp comparison
+    const int TIME_TOLERANCE_SECONDS = 60;
 
     // Check if any of these events are login events matching the requested time
     bool hasMatchingLoginEvent = false;
-
-    // Use a small time tolerance (e.g., 5 seconds) for comparison
-    const int timeTolerance = 5; // in seconds
 
     for (const auto& event : events) {
         if (event->eventType() == EventTypes::SessionEventType::Login) {
             if (loginTime.isValid()) {
                 // Check if the event time is close to the requested login time
                 int timeDiff = qAbs(event->eventTime().secsTo(loginTime));
-                if (timeDiff <= timeTolerance) {
+                if (timeDiff <= TIME_TOLERANCE_SECONDS) {
                     hasMatchingLoginEvent = true;
                     break;
                 }
@@ -1534,10 +1604,12 @@ bool SessionRepository::hasLoginEvent(const QUuid &sessionId, const QDateTime &l
         }
     }
 
-    LOG_DEBUG(QString("Session %1 has %2login event %3")
+    LOG_DEBUG(QString("Session %1 has %2login event%3")
               .arg(sessionId.toString())
               .arg(hasMatchingLoginEvent ? "" : "no ")
-              .arg(loginTime.isValid() ? QString("at time %1").arg(loginTime.toString(Qt::ISODate)) : ""));
+              .arg(loginTime.isValid() ?
+                   QString(" around time %1").arg(loginTime.toString(Qt::ISODate)) :
+                   ""));
 
     return hasMatchingLoginEvent;
 }

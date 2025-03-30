@@ -40,7 +40,8 @@ QString DisciplineRepository::buildSaveQuery()
     return "INSERT INTO disciplines "
            "(code, name, description, created_at, created_by, updated_at, updated_by) "
            "VALUES "
-           "(:code, :name, :description, :created_at, :created_by, :updated_at, :updated_by)";
+           "(:code, :name, :description, :created_at, :created_by, :updated_at, :updated_by) "
+           "RETURNING id";
 }
 
 QString DisciplineRepository::buildUpdateQuery()

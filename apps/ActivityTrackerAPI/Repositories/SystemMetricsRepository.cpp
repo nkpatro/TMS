@@ -22,7 +22,7 @@ QString SystemMetricsRepository::getTableName() const
 
 QString SystemMetricsRepository::getIdParamName() const
 {
-    return "metric_id";
+    return "id";
 }
 
 QString SystemMetricsRepository::getModelId(SystemMetricsModel* model) const
@@ -37,7 +37,8 @@ QString SystemMetricsRepository::buildSaveQuery()
            "created_at, created_by, updated_at, updated_by) "
            "VALUES "
            "(:session_id, :cpu_usage, :gpu_usage, :memory_usage, :measurement_time, "
-           ":created_at, :created_by, :updated_at, :updated_by)";
+           ":created_at, :created_by, :updated_at, :updated_by) "
+           "RETURNING id";
 }
 
 QString SystemMetricsRepository::buildUpdateQuery()

@@ -27,7 +27,8 @@ QString ApplicationRepository::buildSaveQuery()
            "created_at, created_by, updated_at, updated_by) "
            "VALUES "
            "(:app_name, :app_path, :app_hash, :is_restricted, :tracking_enabled, "
-           ":created_at, :created_by, :updated_at, :updated_by)";
+           ":created_at, :created_by, :updated_at, :updated_by) "
+           "RETURNING id";
 }
 
 QString ApplicationRepository::buildUpdateQuery()

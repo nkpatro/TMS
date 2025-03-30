@@ -25,7 +25,8 @@ QString ActivityEventRepository::buildSaveQuery()
            "(session_id, app_id, event_type, event_time, event_data, created_at, created_by, updated_at, updated_by) "
            "VALUES "
            "(:session_id, :app_id, :event_type, :event_time, :event_data::jsonb, "
-           ":created_at, :created_by, :updated_at, :updated_by)";
+           ":created_at, :created_by, :updated_at, :updated_by) "
+           "RETURNING id";
 }
 
 QString ActivityEventRepository::buildUpdateQuery()

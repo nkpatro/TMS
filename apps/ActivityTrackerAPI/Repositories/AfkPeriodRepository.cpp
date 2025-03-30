@@ -26,7 +26,8 @@ QString AfkPeriodRepository::buildSaveQuery()
     return "INSERT INTO afk_periods "
            "(session_id, start_time, end_time, created_at, created_by, updated_at, updated_by) "
            "VALUES "
-           "(:session_id, :start_time, :end_time, :created_at, :created_by, :updated_at, :updated_by)";
+           "(:session_id, :start_time, :end_time, :created_at, :created_by, :updated_at, :updated_by) "
+           "RETURNING id";
 }
 
 QString AfkPeriodRepository::buildUpdateQuery()

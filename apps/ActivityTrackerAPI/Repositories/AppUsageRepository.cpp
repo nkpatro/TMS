@@ -28,7 +28,8 @@ QString AppUsageRepository::buildSaveQuery()
            "created_at, created_by, updated_at, updated_by) "
            "VALUES "
            "(:session_id, :app_id, :start_time, :end_time, :is_active, :window_title, "
-           ":created_at, :created_by, :updated_at, :updated_by)";
+           ":created_at, :created_by, :updated_at, :updated_by) "
+           "RETURNING id";
 }
 
 QString AppUsageRepository::buildUpdateQuery()
@@ -42,12 +43,12 @@ QString AppUsageRepository::buildUpdateQuery()
            "window_title = :window_title, "
            "updated_at = :updated_at, "
            "updated_by = :updated_by "
-           "WHERE usage_id = :usage_id";
+           "WHERE id = :id";
 }
 
 QString AppUsageRepository::buildGetByIdQuery()
 {
-    return "SELECT * FROM app_usage WHERE usage_id = :usage_id";
+    return "SELECT * FROM app_usage WHERE id = :id";
 }
 
 QString AppUsageRepository::buildGetAllQuery()
@@ -57,12 +58,12 @@ QString AppUsageRepository::buildGetAllQuery()
 
 QString AppUsageRepository::buildRemoveQuery()
 {
-    return "DELETE FROM app_usage WHERE usage_id = :usage_id";
+    return "DELETE FROM app_usage WHERE id = :id";
 }
 
 QString AppUsageRepository::getIdParamName() const
 {
-    return "usage_id";
+    return "id";
 }
 
 QMap<QString, QVariant> AppUsageRepository::prepareParamsForSave(AppUsageModel* appUsage)
@@ -85,7 +86,7 @@ QMap<QString, QVariant> AppUsageRepository::prepareParamsForSave(AppUsageModel* 
 QMap<QString, QVariant> AppUsageRepository::prepareParamsForUpdate(AppUsageModel* appUsage)
 {
     QMap<QString, QVariant> params = prepareParamsForSave(appUsage);
-    params["usage_id"] = appUsage->id().toString(QUuid::WithoutBraces);
+    params["id"] = appUsage->id().toString(QUuid::WithoutBraces);
 
     return params;
 }
@@ -109,7 +110,7 @@ bool AppUsageRepository::endAppUsage(const QUuid &usageId, const QDateTime &endT
     }
 
     QMap<QString, QVariant> params;
-    params["usage_id"] = usageId.toString(QUuid::WithoutBraces);
+    params["id"] = usageId.toString(QUuid::WithoutBraces);
     params["end_time"] = endTime.toString(Qt::ISODate);
     params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
 
@@ -118,7 +119,7 @@ bool AppUsageRepository::endAppUsage(const QUuid &usageId, const QDateTime &endT
         "end_time = :end_time, "
         "is_active = false, "
         "updated_at = :updated_at "
-        "WHERE usage_id = :usage_id";
+        "WHERE id = :id";
 
     bool success = m_dbService->executeModificationQuery(query, params);
 
@@ -318,7 +319,7 @@ QJsonObject AppUsageRepository::getAppUsageSummary(const QUuid &sessionId)
 
     if (currentApp) {
         QJsonObject activeApp;
-        activeApp["usage_id"] = currentApp->id().toString(QUuid::WithoutBraces);
+        activeApp["id"] = currentApp->id().toString(QUuid::WithoutBraces);
         activeApp["app_id"] = currentApp->appId().toString(QUuid::WithoutBraces);
         activeApp["start_time"] = currentApp->startTime().toString(Qt::ISODate);
         activeApp["window_title"] = currentApp->windowTitle();

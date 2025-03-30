@@ -26,7 +26,8 @@ QString UserRepository::buildSaveQuery()
            "created_at, created_by, updated_at, updated_by) "
            "VALUES "
            "(:name, :email, :password, :photo, :active::boolean, :verified::boolean, :verification_code, "
-           ":status_id, :created_at, :created_by, :updated_at, :updated_by)";
+           ":status_id, :created_at, :created_by, :updated_at, :updated_by) "
+           "RETURNING id";
 }
 
 QString UserRepository::buildUpdateQuery()

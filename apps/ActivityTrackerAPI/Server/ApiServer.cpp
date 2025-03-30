@@ -178,75 +178,91 @@ void ApiServer::setupControllers()
         // Create repositories
         LOG_DEBUG("Creating repositories");
 
+        // Create all repositories first
         m_userRepository = new UserRepository(this);
-        m_userRepository->initialize(&DbManager::instance().getService<UserModel>());
-
+        m_tokenRepository = new TokenRepository(this);
         m_machineRepository = new MachineRepository(this);
-        m_machineRepository->initialize(&DbManager::instance().getService<MachineModel>());
-
         m_sessionRepository = new SessionRepository(this);
-        m_sessionRepository->initialize(&DbManager::instance().getService<SessionModel>());
-
         m_activityEventRepository = new ActivityEventRepository(this);
-        m_activityEventRepository->initialize(&DbManager::instance().getService<ActivityEventModel>());
-
         m_afkPeriodRepository = new AfkPeriodRepository(this);
-        m_afkPeriodRepository->initialize(&DbManager::instance().getService<AfkPeriodModel>());
-
         m_applicationRepository = new ApplicationRepository(this);
-        m_applicationRepository->initialize(&DbManager::instance().getService<ApplicationModel>());
-
         m_appUsageRepository = new AppUsageRepository(this);
-        m_appUsageRepository->initialize(&DbManager::instance().getService<AppUsageModel>());
-
         m_systemMetricsRepository = new SystemMetricsRepository(this);
-        m_systemMetricsRepository->initialize(&DbManager::instance().getService<SystemMetricsModel>());
-
         m_sessionEventRepository = new SessionEventRepository(this);
-        m_sessionEventRepository->initialize(&DbManager::instance().getService<SessionEventModel>());
-
         m_userRoleDisciplineRepository = new UserRoleDisciplineRepository(this);
+
+        // Initialize repositories
+        LOG_DEBUG("Initializing repositories");
+        m_userRepository->initialize(&DbManager::instance().getService<UserModel>());
+        m_tokenRepository->initialize(&DbManager::instance().getService<TokenModel>());
+        m_machineRepository->initialize(&DbManager::instance().getService<MachineModel>());
+        m_sessionRepository->initialize(&DbManager::instance().getService<SessionModel>());
+        m_activityEventRepository->initialize(&DbManager::instance().getService<ActivityEventModel>());
+        m_afkPeriodRepository->initialize(&DbManager::instance().getService<AfkPeriodModel>());
+        m_applicationRepository->initialize(&DbManager::instance().getService<ApplicationModel>());
+        m_appUsageRepository->initialize(&DbManager::instance().getService<AppUsageModel>());
+        m_systemMetricsRepository->initialize(&DbManager::instance().getService<SystemMetricsModel>());
+        m_sessionEventRepository->initialize(&DbManager::instance().getService<SessionEventModel>());
         m_userRoleDisciplineRepository->initialize(&DbManager::instance().getService<UserRoleDisciplineModel>());
 
-        // Create and initialize TokenRepository
-        m_tokenRepository = new TokenRepository(this);
-        m_tokenRepository->initialize(&DbManager::instance().getService<TokenModel>());
+        // Link repositories that need references to each other
+        // This is critical: Connect SessionEventRepository to SessionRepository BEFORE
+        // creating controllers that might use these repositories
+        if (m_sessionRepository && m_sessionEventRepository) {
+            LOG_DEBUG("Linking SessionEventRepository to SessionRepository");
+            m_sessionRepository->setSessionEventRepository(m_sessionEventRepository);
 
-        // Configure AuthFramework with repositories
+            // Verify the link is working properly
+            bool hasEventRepository = m_sessionRepository->hasSessionEventRepository();
+            LOG_INFO(QString("SessionRepository has event repository: %1").arg(hasEventRepository ? "YES" : "NO"));
+        }
+
+        // Configure AuthFramework
         AuthFramework::instance().setUserRepository(m_userRepository);
-        AuthFramework::instance().setTokenRepository(m_tokenRepository); // Set TokenRepository
+        AuthFramework::instance().setTokenRepository(m_tokenRepository);
         AuthFramework::instance().setAutoCreateUsers(true);
         AuthFramework::instance().setEmailDomain("redefine.co");
 
-        // Initialize token storage to load tokens from database
+        // Initialize token storage (load from database into memory)
         AuthFramework::instance().initializeTokenStorage();
 
         // Set token expiry times
-        AuthFramework::instance().setTokenExpiry(AuthFramework::UserToken, 24);      // 1 day
-        AuthFramework::instance().setTokenExpiry(AuthFramework::ServiceToken, 168);  // 7 days
-        AuthFramework::instance().setTokenExpiry(AuthFramework::ApiKey, 8760);       // 1 year
-        AuthFramework::instance().setTokenExpiry(AuthFramework::RefreshToken, 720);  // 30 days
+        AuthFramework::instance().setTokenExpiry(AuthFramework::UserToken, 24);
+        AuthFramework::instance().setTokenExpiry(AuthFramework::ServiceToken, 168);
+        AuthFramework::instance().setTokenExpiry(AuthFramework::ApiKey, 8760);
+        AuthFramework::instance().setTokenExpiry(AuthFramework::RefreshToken, 720);
 
+        // Create services
         LOG_DEBUG("Creating AD verification service");
-
-        // Create and configure the AD verification service
         m_adVerificationService = std::make_shared<ADVerificationService>(this);
         m_adVerificationService->setADServerUrl("https://ad.redefine.co/api");
 
+        // Create controllers
         LOG_DEBUG("Creating controllers");
 
-        // Create AuthController with AD verification
+        // Create AuthController first as it's needed by other controllers
         m_authController = std::make_shared<AuthController>(m_userRepository, m_adVerificationService.get(), this);
         m_authController->setTokenRepository(m_tokenRepository);
-
-        // Configure AuthController
         m_authController->setAutoCreateUsers(true);
         m_authController->setEmailDomain("redefine.co");
 
-        // Configure AuthFramework with AuthController
         AuthFramework::instance().setAuthController(m_authController.get());
 
-        // Create other controllers
+        // Create SessionEventController before SessionController
+        // This ensures it's fully initialized before being used
+        m_sessionEventController = std::make_shared<SessionEventController>(
+            m_sessionEventRepository,
+            this);
+        m_sessionEventController->setAuthController(m_authController.get());
+
+        // Do explicitly check if it's properly initialized
+        if (!m_sessionEventController->initialize()) {
+            LOG_ERROR("Failed to initialize SessionEventController");
+            throw std::runtime_error("SessionEventController initialization failed");
+        }
+        LOG_INFO("SessionEventController initialized successfully");
+
+        // Create remaining controllers
         m_machineController = std::make_shared<MachineController>(m_machineRepository, this);
 
         // Create SessionController with all required repositories
@@ -257,60 +273,45 @@ void ApiServer::setupControllers()
             m_appUsageRepository,
             this);
 
-        // Set additional repositories and controllers for SessionController
         m_sessionController->setAuthController(m_authController.get());
+        // This should be redundant since we already set it at repository level,
+        // but do it anyway for clarity and to ensure proper linkage
         m_sessionController->setSessionEventRepository(m_sessionEventRepository);
         m_sessionController->setMachineRepository(m_machineRepository);
 
-        // Create ApplicationController
-        m_applicationController = std::make_shared<ApplicationController>(
-            m_applicationRepository,
-            this);
+        // Initialize explicitly to verify everything is working
+        if (!m_sessionController->initialize()) {
+            LOG_ERROR("Failed to initialize SessionController");
+            throw std::runtime_error("SessionController initialization failed");
+        }
+        LOG_INFO("SessionController initialized successfully");
 
-        // Connect ApplicationController with AuthController
+        // Create remaining controllers...
+        m_applicationController = std::make_shared<ApplicationController>(
+            m_applicationRepository, this);
         m_applicationController->setAuthController(m_authController);
 
-        // Create SystemMetricsController
         m_systemMetricsController = std::make_shared<SystemMetricsController>(
-            m_systemMetricsRepository,
-            this);
-
-        // Set AuthController for SystemMetricsController
+            m_systemMetricsRepository, this);
         m_systemMetricsController->setAuthController(m_authController.get());
 
-        // Create AppUsageController
         m_appUsageController = std::make_shared<AppUsageController>(
             m_appUsageRepository,
             m_applicationRepository,
             this);
-
-        // Set AuthController for AppUsageController
         m_appUsageController->setAuthController(m_authController.get());
 
-        // Create ActivityEventController
         m_activityEventController = std::make_shared<ActivityEventController>(
             m_activityEventRepository,
             m_authController.get(),
             this);
-
-        // Set SessionRepository in ActivityEventController for session validation
         m_activityEventController->setSessionRepository(m_sessionRepository);
 
-        // Create SessionEventController
-        m_sessionEventController = std::make_shared<SessionEventController>(
-            m_sessionEventRepository,
-            this);
-
-        // Set AuthController for SessionEventController
-        m_sessionEventController->setAuthController(m_authController.get());
-
-        // Create UserRoleDisciplineController
         m_userRoleDisciplineController = std::make_shared<UserRoleDisciplineController>(
             m_userRoleDisciplineRepository,
             m_authController.get(),
             this);
 
-        // Create BatchController
         m_batchController = std::make_shared<BatchController>(
             m_activityEventRepository,
             m_appUsageRepository,
@@ -318,11 +319,8 @@ void ApiServer::setupControllers()
             m_sessionEventRepository,
             m_sessionRepository,
             this);
-
-        // Set AuthController for BatchController
         m_batchController->setAuthController(m_authController.get());
 
-        // Create ServerStatusController
         m_serverStatusController = std::make_shared<ServerStatusController>(this);
 
         LOG_DEBUG("Registering controllers with server");
@@ -340,6 +338,7 @@ void ApiServer::setupControllers()
         m_server.registerController(m_batchController);
         m_server.registerController(m_serverStatusController);
 
+        // Create default admin user if needed
         QUuid adminUserId;
         if (m_authController) {
             adminUserId = m_authController->createDefaultAdminUser();
@@ -354,8 +353,8 @@ void ApiServer::setupControllers()
     }
     catch (const std::exception& ex) {
         LOG_FATAL(QString("Exception during controller setup: %1").arg(ex.what()));
-        cleanupRepositories(); // Clean up any partially initialized repositories
-        throw; // Re-throw to allow proper handling by caller
+        cleanupRepositories();
+        throw;
     }
 }
 

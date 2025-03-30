@@ -9,7 +9,7 @@
 #include <QDateTime>
 #include <QJsonObject>
 
-class SessionEventRepository;
+#include "SessionEventRepository.h"
 
 class SessionRepository : public BaseRepository<SessionModel>
 {
@@ -56,6 +56,7 @@ public:
         const QString& terminalSessionId = QString());
 
     void setSessionEventRepository(SessionEventRepository* sessionEventRepository) { m_sessionEventRepository = sessionEventRepository; }
+    bool hasSessionEventRepository() const { return m_sessionEventRepository != nullptr && m_sessionEventRepository->isInitialized(); }
 
 protected:
     // Required BaseRepository abstract method implementations

@@ -488,34 +488,61 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             return createErrorResponse("Failed to create session", QHttpServerResponder::StatusCode::InternalServerError);
         }
 
-        // Create a login event if we have an event repository
+        // Explicitly check if login event was created, and create it if missing
         if (m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
-            SessionEventModel* event = new SessionEventModel();
-            event->setSessionId(session->id());
-            event->setEventType(EventTypes::SessionEventType::Login);
-            event->setEventTime(currentDateTime);
-            event->setUserId(user->id());
-            event->setMachineId(machineId);
-            event->setIsRemote(isRemote);
+            if (!m_repository->hasLoginEvent(session->id(), currentDateTime, m_sessionEventRepository)) {
+                LOG_WARNING(QString("No login event found for new session %1. Creating one as fallback.")
+                           .arg(session->id().toString()));
 
-            if (!terminalSessionId.isEmpty()) {
-                event->setTerminalSessionId(terminalSessionId);
-            }
+                SessionEventModel* event = new SessionEventModel();
+                event->setId(QUuid::createUuid());
+                event->setSessionId(session->id());
+                event->setEventType(EventTypes::SessionEventType::Login);
+                event->setEventTime(currentDateTime);
+                event->setUserId(user->id());
+                event->setMachineId(machineId);
+                event->setIsRemote(isRemote);
 
-            // Set metadata
-            event->setCreatedBy(user->id());
-            event->setUpdatedBy(user->id());
-            event->setCreatedAt(currentDateTime);
-            event->setUpdatedAt(currentDateTime);
+                if (!terminalSessionId.isEmpty()) {
+                    event->setTerminalSessionId(terminalSessionId);
+                }
 
-            bool eventSuccess = m_sessionEventRepository->save(event);
-            if (!eventSuccess) {
-                LOG_WARNING(QString("Failed to record login event for session: %1").arg(session->id().toString()));
-                // Continue since this is not critical
+                // Add additional context
+                QJsonObject eventData;
+                eventData["reason"] = "fallback_creation";
+                eventData["auto_generated"] = true;
+                event->setEventData(eventData);
+
+                // Set metadata
+                event->setCreatedBy(user->id());
+                event->setUpdatedBy(user->id());
+                event->setCreatedAt(currentDateTime);
+                event->setUpdatedAt(currentDateTime);
+
+                bool eventSuccess = m_sessionEventRepository->save(event);
+                if (!eventSuccess) {
+                    LOG_ERROR(QString("Still failed to create login event for session: %1")
+                             .arg(session->id().toString()));
+                    // Continue anyway as we at least have the session
+                } else {
+                    LOG_INFO(QString("Fallback login event created for session: %1")
+                            .arg(session->id().toString()));
+                }
+                delete event;
             } else {
-                LOG_INFO(QString("Login event recorded for session: %1").arg(session->id().toString()));
+                LOG_INFO(QString("Login event already exists for session: %1")
+                        .arg(session->id().toString()));
             }
-            delete event;
+        } else {
+            LOG_WARNING("SessionEventRepository not available or not initialized - cannot verify login event");
+        }
+
+        // Double-check to make sure session event was really created (final verification)
+        if (m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
+            QList<QSharedPointer<SessionEventModel>> events = m_sessionEventRepository->getBySessionId(session->id());
+            LOG_INFO(QString("Session %1 has %2 events associated with it")
+                     .arg(session->id().toString())
+                     .arg(events.size()));
         }
 
         // Determine if this is a new session or an existing one for status code

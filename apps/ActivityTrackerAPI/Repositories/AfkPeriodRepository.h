@@ -31,7 +31,7 @@ protected:
     QMap<QString, QVariant> prepareParamsForUpdate(AfkPeriodModel* model) override;
     AfkPeriodModel* createModelFromQuery(const QSqlQuery &query) override;
 
-    QString getIdParamName() const override { return "afk_id"; }
+    QString getIdParamName() const override { return "id"; }
 };
 
 #endif // AFKPERIODREPOSITORY_H
