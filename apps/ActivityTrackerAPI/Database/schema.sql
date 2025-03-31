@@ -705,6 +705,9 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
     token_data JSONB NOT NULL,          -- All token metadata
     expires_at TIMESTAMPTZ NOT NULL,    -- Expiration timestamp
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_by uuid REFERENCES users(id),
+    updated_at TIMESTAMPTZ NOT NULL,
+    updated_by uuid REFERENCES users(id),
     revoked BOOLEAN DEFAULT false,      -- For token revocation
     revocation_reason VARCHAR(255),     -- Optional reason for revocation
     device_info JSONB,                  -- Device information
