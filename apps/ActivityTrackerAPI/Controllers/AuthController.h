@@ -8,6 +8,7 @@
 #include "../Repositories/UserRepository.h"
 
 class ADVerificationService;
+class TokenRepository;
 
 class AuthController : public ApiControllerBase
 {
@@ -81,11 +82,6 @@ private:
     // Configuration parameters
     bool m_autoCreateUsers;
     QString m_emailDomain;
-
-    // In-memory token storage (would use a more robust solution in production)
-    QMap<QString, QJsonObject> m_tokenToUserData;
-    QMap<QString, QJsonObject> m_serviceTokens;
 };
 
 #endif // AUTHCONTROLLER_H
-
