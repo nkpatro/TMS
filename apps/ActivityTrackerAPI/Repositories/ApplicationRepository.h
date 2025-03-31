@@ -50,6 +50,7 @@ protected:
     QMap<QString, QVariant> prepareParamsForSave(ApplicationModel* model) override;
     QMap<QString, QVariant> prepareParamsForUpdate(ApplicationModel* model) override;
     ApplicationModel* createModelFromQuery(const QSqlQuery &query) override;
+    void logQueryWithValues(const QString& query, const QMap<QString, QVariant>& params);
 };
 
 #endif // APPLICATIONREPOSITORY_H

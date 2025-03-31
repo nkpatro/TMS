@@ -672,9 +672,9 @@ bool ModelFactory::validateApplicationModel(const ApplicationModel* model, QStri
 bool ModelFactory::validateAppUsageModel(const AppUsageModel* model, QStringList& errors) {
     errors.clear();
 
-    if (model->id().isNull()) {
-        errors.append("ID is required");
-    }
+    // if (model->id().isNull()) {
+    //     errors.append("ID is required");
+    // }
 
     if (model->sessionId().isNull()) {
         errors.append("Session ID is required");

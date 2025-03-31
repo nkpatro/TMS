@@ -121,6 +121,7 @@ bool AppUsageRepository::endAppUsage(const QUuid &usageId, const QDateTime &endT
         "updated_at = :updated_at "
         "WHERE id = :id";
 
+    logQueryWithValues(query, params);
     bool success = m_dbService->executeModificationQuery(query, params);
 
     if (success) {
@@ -240,6 +241,7 @@ QSharedPointer<AppUsageModel> AppUsageRepository::getCurrentActiveApp(const QUui
     QString query = "SELECT * FROM app_usage WHERE session_id = :session_id AND is_active = true "
                    "ORDER BY start_time DESC LIMIT 1";
 
+    logQueryWithValues(query, params);
     auto result = m_dbService->executeSingleSelectQuery(
         query,
         params,
@@ -278,6 +280,7 @@ QJsonObject AppUsageRepository::getAppUsageSummary(const QUuid &sessionId)
         "FROM app_usage "
         "WHERE session_id = :session_id";
 
+    logQueryWithValues(query, params);
     auto result = m_dbService->executeSingleSelectQuery(
         query,
         params,
@@ -406,3 +409,43 @@ QJsonArray AppUsageRepository::getTopApps(const QUuid &sessionId, int limit)
     return topApps;
 }
 
+void AppUsageRepository::logQueryWithValues(const QString& query, const QMap<QString, QVariant>& params)
+{
+    LOG_DEBUG("Executing query: " + query);
+
+    if (!params.isEmpty()) {
+        LOG_DEBUG("Query parameters:");
+        for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
+            QString paramValue;
+
+            if (it.value().isNull() || !it.value().isValid()) {
+                paramValue = "NULL";
+            } else if (it.value().type() == QVariant::String) {
+                paramValue = "'" + it.value().toString() + "'";
+            } else {
+                paramValue = it.value().toString();
+            }
+
+            LOG_DEBUG(QString("  %1 = %2").arg(it.key(), paramValue));
+        }
+    }
+
+    // For complex debugging, construct the actual query with values
+    QString resolvedQuery = query;
+    for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
+        QString placeholder = ":" + it.key();
+        QString value;
+
+        if (it.value().isNull() || !it.value().isValid()) {
+            value = "NULL";
+        } else if (it.value().type() == QVariant::String) {
+            value = "'" + it.value().toString() + "'";
+        } else {
+            value = it.value().toString();
+        }
+
+        resolvedQuery.replace(placeholder, value);
+    }
+
+    LOG_DEBUG("Resolved query: " + resolvedQuery);
+}

@@ -510,10 +510,10 @@ QHttpServerResponse ActivityEventController::handleCreateEvent(const QHttpServer
         event->setSessionId(sessionUuid);
 
         // Handle app ID if provided
-        if (json.contains("app_id") && !json["app_id"].toString().isEmpty()) {
+        if (json.contains("id") && !json["id"].toString().isEmpty()) {
             QUuid appId;
             try {
-                appId = QUuid(json["app_id"].toString());
+                appId = QUuid(json["id"].toString());
                 if (!appId.isNull()) {
                     event->setAppId(appId);
                     LOG_DEBUG(QString("Setting app ID: %1").arg(appId.toString()));
@@ -635,8 +635,8 @@ QHttpServerResponse ActivityEventController::handleCreateEventForSession(const q
         event->setSessionId(sessionUuid);
 
         // Set app ID if provided
-        if (json.contains("app_id") && !json["app_id"].toString().isEmpty()) {
-            event->setAppId(QUuid(json["app_id"].toString()));
+        if (json.contains("id") && !json["id"].toString().isEmpty()) {
+            event->setAppId(QUuid(json["id"].toString()));
         }
 
         // Set event type
@@ -717,8 +717,8 @@ QHttpServerResponse ActivityEventController::handleUpdateEvent(const qint64 id, 
         }
 
         // Update fields if provided
-        if (json.contains("app_id") && !json["app_id"].toString().isEmpty()) {
-            event->setAppId(QUuid(json["app_id"].toString()));
+        if (json.contains("id") && !json["id"].toString().isEmpty()) {
+            event->setAppId(QUuid(json["id"].toString()));
         }
 
         if (json.contains("event_type") && !json["event_type"].toString().isEmpty()) {

@@ -35,6 +35,7 @@ protected:
     QMap<QString, QVariant> prepareParamsForUpdate(AppUsageModel* model) override;
     AppUsageModel* createModelFromQuery(const QSqlQuery &query) override;
     bool validateModel(AppUsageModel* model, QStringList& errors) override;
+    void logQueryWithValues(const QString& query, const QMap<QString, QVariant>& params);
 };
 
 #endif // APPUSAGEREPOSITORY_H

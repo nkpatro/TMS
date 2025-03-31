@@ -41,12 +41,12 @@ QString ApplicationRepository::buildUpdateQuery()
            "tracking_enabled = :tracking_enabled, "
            "updated_at = :updated_at, "
            "updated_by = :updated_by "
-           "WHERE app_id = :app_id";
+           "WHERE id = :id";
 }
 
 QString ApplicationRepository::buildGetByIdQuery()
 {
-    return "SELECT * FROM applications WHERE app_id = :app_id";
+    return "SELECT * FROM applications WHERE id = :id";
 }
 
 QString ApplicationRepository::buildGetAllQuery()
@@ -56,7 +56,7 @@ QString ApplicationRepository::buildGetAllQuery()
 
 QString ApplicationRepository::buildRemoveQuery()
 {
-    return "DELETE FROM applications WHERE app_id = :app_id";
+    return "DELETE FROM applications WHERE id = :id";
 }
 
 QMap<QString, QVariant> ApplicationRepository::prepareParamsForSave(ApplicationModel *application)
@@ -78,7 +78,7 @@ QMap<QString, QVariant> ApplicationRepository::prepareParamsForSave(ApplicationM
 QMap<QString, QVariant> ApplicationRepository::prepareParamsForUpdate(ApplicationModel *application)
 {
     QMap<QString, QVariant> params = prepareParamsForSave(application);
-    params["app_id"] = application->id().toString(QUuid::WithoutBraces);
+    params["id"] = application->id().toString(QUuid::WithoutBraces);
     return params;
 }
 
@@ -100,6 +100,7 @@ QSharedPointer<ApplicationModel> ApplicationRepository::getByPath(const QString 
     params["app_path"] = appPath;
     QString query = "SELECT * FROM applications WHERE app_path = :app_path";
 
+    logQueryWithValues(query, params);
     auto result = m_dbService->executeSingleSelectQuery(
         query,
         params,
@@ -130,6 +131,7 @@ QSharedPointer<ApplicationModel> ApplicationRepository::getByPathAndName(const Q
     params["app_name"] = appName;
     QString query = "SELECT * FROM applications WHERE app_path = :app_path AND app_name = :app_name";
 
+    logQueryWithValues(query, params);
     auto result = m_dbService->executeSingleSelectQuery(
         query,
         params,
@@ -159,7 +161,7 @@ QList<QSharedPointer<ApplicationModel>> ApplicationRepository::getByRoleId(const
     params["role_id"] = roleId.toString(QUuid::WithoutBraces);
     QString query =
         "SELECT a.* FROM applications a "
-        "JOIN tracked_applications_roles tar ON a.app_id = tar.app_id "
+        "JOIN tracked_applications_roles tar ON a.id = tar.app_id "
         "WHERE tar.role_id = :role_id "
         "ORDER BY a.app_name";
 
@@ -192,7 +194,7 @@ QList<QSharedPointer<ApplicationModel>> ApplicationRepository::getByDisciplineId
     params["discipline_id"] = disciplineId.toString(QUuid::WithoutBraces);
     QString query =
         "SELECT a.* FROM applications a "
-        "JOIN tracked_applications_disciplines tad ON a.app_id = tad.app_id "
+        "JOIN tracked_applications_disciplines tad ON a.id = tad.id "
         "WHERE tad.discipline_id = :discipline_id "
         "ORDER BY a.app_name";
 
@@ -280,10 +282,12 @@ bool ApplicationRepository::assignApplicationToRole(const QUuid &appId, const QU
     checkParams["app_id"] = appId.toString(QUuid::WithoutBraces);
     checkParams["role_id"] = roleId.toString(QUuid::WithoutBraces);
 
+    // Todo: Check query again if it fails with app_id
     QString checkQuery =
         "SELECT 1 FROM tracked_applications_roles "
         "WHERE app_id = :app_id AND role_id = :role_id";
 
+    logQueryWithValues(checkQuery, checkParams);
     auto exists = m_dbService->executeSingleSelectQuery(
         checkQuery,
         checkParams,
@@ -313,6 +317,7 @@ bool ApplicationRepository::assignApplicationToRole(const QUuid &appId, const QU
         "VALUES "
         "(:app_id, :role_id, :created_by, :created_at, :updated_by, :updated_at)";
 
+    logQueryWithValues(query, params);
     bool success = m_dbService->executeModificationQuery(query, params);
 
     if (success) {
@@ -342,6 +347,7 @@ bool ApplicationRepository::removeApplicationFromRole(const QUuid &appId, const 
         "DELETE FROM tracked_applications_roles "
         "WHERE app_id = :app_id AND role_id = :role_id";
 
+    logQueryWithValues(query, params);
     bool success = m_dbService->executeModificationQuery(query, params);
 
     if (success) {
@@ -372,6 +378,7 @@ bool ApplicationRepository::assignApplicationToDiscipline(const QUuid &appId, co
         "SELECT 1 FROM tracked_applications_disciplines "
         "WHERE app_id = :app_id AND discipline_id = :discipline_id";
 
+    logQueryWithValues(checkQuery, checkParams);
     auto result = m_dbService->executeSingleSelectQuery(
         checkQuery,
         checkParams,
@@ -401,6 +408,7 @@ bool ApplicationRepository::assignApplicationToDiscipline(const QUuid &appId, co
         "VALUES "
         "(:app_id, :discipline_id, :created_by, :created_at, :updated_by, :updated_at)";
 
+    logQueryWithValues(query, params);
     bool success = m_dbService->executeModificationQuery(query, params);
 
     if (success) {
@@ -430,6 +438,7 @@ bool ApplicationRepository::removeApplicationFromDiscipline(const QUuid &appId, 
         "DELETE FROM tracked_applications_disciplines "
         "WHERE app_id = :app_id AND discipline_id = :discipline_id";
 
+    logQueryWithValues(query, params);
     bool success = m_dbService->executeModificationQuery(query, params);
 
     if (success) {
@@ -505,3 +514,43 @@ QSharedPointer<ApplicationModel> ApplicationRepository::findOrCreateApplication(
     return nullptr;
 }
 
+void ApplicationRepository::logQueryWithValues(const QString& query, const QMap<QString, QVariant>& params)
+{
+    LOG_DEBUG("Executing query: " + query);
+
+    if (!params.isEmpty()) {
+        LOG_DEBUG("Query parameters:");
+        for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
+            QString paramValue;
+
+            if (it.value().isNull() || !it.value().isValid()) {
+                paramValue = "NULL";
+            } else if (it.value().type() == QVariant::String) {
+                paramValue = "'" + it.value().toString() + "'";
+            } else {
+                paramValue = it.value().toString();
+            }
+
+            LOG_DEBUG(QString("  %1 = %2").arg(it.key(), paramValue));
+        }
+    }
+
+    // For complex debuging, construct the actual query with values
+    QString resolvedQuery = query;
+    for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
+        QString placeholder = ":" + it.key();
+        QString value;
+
+        if (it.value().isNull() || !it.value().isValid()) {
+            value = "NULL";
+        } else if (it.value().type() == QVariant::String) {
+            value = "'" + it.value().toString() + "'";
+        } else {
+            value = it.value().toString();
+        }
+
+        resolvedQuery.replace(placeholder, value);
+    }
+
+    LOG_DEBUG("Resolved query: " + resolvedQuery);
+}

@@ -962,7 +962,7 @@ QJsonObject ApplicationController::applicationToJson(ApplicationModel *applicati
             .arg(application->appName(), application->id().toString()));
 
     QJsonObject json;
-    json["app_id"] = uuidToString(application->id());
+    json["id"] = uuidToString(application->id());
     json["app_name"] = application->appName();
     json["app_path"] = application->appPath();
     json["app_hash"] = application->appHash();
