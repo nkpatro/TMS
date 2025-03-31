@@ -1,6 +1,7 @@
 #include "logger/logger.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QRegularExpression>
 #include <QStandardPaths>
 
 // Initialize static member to nullptr
@@ -85,34 +86,34 @@ bool Logger::enableConsoleOutput(bool enable) {
     return m_consoleOutput;
 }
 
-void Logger::debug(const QString& message, const QString& source) {
-    log(Debug, message, source);
+void Logger::debug(const QString& message, const QString& source, int line) {
+    log(Debug, message, source, line);
 }
 
-void Logger::info(const QString& message, const QString& source) {
-    log(Info, message, source);
+void Logger::info(const QString& message, const QString& source, int line) {
+    log(Info, message, source, line);
 }
 
-void Logger::warning(const QString& message, const QString& source) {
-    log(Warning, message, source);
+void Logger::warning(const QString& message, const QString& source, int line) {
+    log(Warning, message, source, line);
 }
 
-void Logger::error(const QString& message, const QString& source) {
-    log(Error, message, source);
+void Logger::error(const QString& message, const QString& source, int line) {
+    log(Error, message, source, line);
 }
 
-void Logger::fatal(const QString& message, const QString& source) {
-    log(Fatal, message, source);
+void Logger::fatal(const QString& message, const QString& source, int line) {
+    log(Fatal, message, source, line);
 }
 
-void Logger::log(LogLevel level, const QString& message, const QString& source) {
+void Logger::log(LogLevel level, const QString& message, const QString& source, int line) {
     // Only log if level is sufficient
     if (level < m_logLevel) {
         return;
     }
 
     // Create formatted message outside the lock to minimize lock time
-    QString formattedMessage = formatLogMessage(level, message, source);
+    QString formattedMessage = formatLogMessage(level, message, source, line);
 
     QMutexLocker locker(&m_mutex);
     writeToLog(formattedMessage);
@@ -136,7 +137,7 @@ void Logger::log(LogLevel level, const QString& message, const QString& source) 
     }
 }
 
-void Logger::logData(LogLevel level, const QMap<QString, QVariant>& data, const QString& source) {
+void Logger::logData(LogLevel level, const QMap<QString, QVariant>& data, const QString& source, int line) {
     if (level < m_logLevel) {
         return;
     }
@@ -146,7 +147,7 @@ void Logger::logData(LogLevel level, const QMap<QString, QVariant>& data, const 
         logParts.append(QString("%1: %2").arg(it.key(), it.value().toString()));
     }
 
-    log(level, logParts.join(", "), source);
+    log(level, logParts.join(", "), source, line);
 }
 
 QString Logger::logLevelToString(LogLevel level) {
@@ -160,47 +161,57 @@ QString Logger::logLevelToString(LogLevel level) {
     }
 }
 
-QString Logger::formatLogMessage(LogLevel level, const QString& message, const QString& source) {
+QString Logger::formatLogMessage(LogLevel level, const QString& message, const QString& source, int line) {
     QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
     QString pid = QString::number(QCoreApplication::applicationPid());
     QString threadId = QString::number(reinterpret_cast<quintptr>(QThread::currentThreadId()));
     QString levelStr = logLevelToString(level);
+    QString lineStr = (line >= 0) ? QString(":%1").arg(line) : "";
 
     QString formattedMsg;
     if (source.isEmpty()) {
         formattedMsg = QString("[%1] [%2] [PID:%3] [TID:%4] %5")
             .arg(timestamp, levelStr, pid, threadId, message);
     } else {
-        // For enhanced visualization, extract just ClassName::methodName
+        // Parse the source string to clean it up
         QString sourceInfo = source;
 
-        // Extract the fully qualified name without parameters
+        // First, remove parameters if any
         int parenPos = source.indexOf('(');
         if (parenPos > 0) {
-            QString fullName = source.left(parenPos);
+            sourceInfo = source.left(parenPos);
+        }
 
-            // Count double-colons to determine if we have namespaces
-            int colonCount = fullName.count("::");
+        // Case 1: Pattern like "getService<class UserRoleDisciplineModel>"
+        static QRegularExpression templatePattern("([a-zA-Z0-9_]+)<class\\s+([a-zA-Z0-9_]+)>");
+        QRegularExpressionMatch templateMatch = templatePattern.match(sourceInfo);
 
-            if (colonCount >= 1) {
-                // We have at least one class/namespace separator
-                int lastColonPos = fullName.lastIndexOf("::");
+        if (templateMatch.hasMatch()) {
+            // We have a match for the pattern methodName<class ClassName>
+            QString methodName = templateMatch.captured(1);
+            QString className = templateMatch.captured(2);
 
-                if (colonCount >= 2) {
-                    // We have both namespace and class, try to get just ClassName::methodName
-                    int secondLastColonPos = fullName.lastIndexOf("::", lastColonPos - 1);
-                    sourceInfo = fullName.mid(secondLastColonPos + 2);
-                } else {
-                    // Only one separator, use as is (likely ClassName::methodName)
-                    sourceInfo = fullName;
+            // Rearrange to ClassName::methodName format
+            sourceInfo = className + "::" + methodName;
+        }
+        // Case 2: Remove __cdecl and clean up the format
+        else if (sourceInfo.contains("__cdecl")) {
+            // Remove __cdecl
+            sourceInfo = sourceInfo.replace("__cdecl ", "");
+
+            // Special case for constructor patterns like "ClassName::ClassName"
+            if (sourceInfo.contains("::")) {
+                QStringList parts = sourceInfo.split("::");
+                if (parts.size() >= 2 && parts[parts.size()-2] == parts[parts.size()-1]) {
+                    // It's a constructor, keep the format clean
+                    sourceInfo = parts[parts.size()-2] + "::constructor";
                 }
-            } else {
-                // No class separator, use the full name (likely just a function)
-                sourceInfo = fullName;
             }
         }
 
-        sourceInfo = sourceInfo.replace("__cdecl ", "");
+        // Add line number to source info if available
+        sourceInfo += lineStr;
+
         formattedMsg = QString("[%1] [%2] [PID:%3] [TID:%4] [%5] %6")
             .arg(timestamp, levelStr, pid, threadId, sourceInfo, message);
     }

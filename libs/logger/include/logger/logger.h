@@ -74,48 +74,55 @@ public:
      * @brief Logs a debug message
      * @param message The log message
      * @param source The source function or class name
+     * @param line The line number where the log was called
      */
-    void debug(const QString& message, const QString& source = QString());
+    void debug(const QString& message, const QString& source = QString(), int line = -1);
     /**
      * @brief Logs an informational message
      * @param message The log message
      * @param source The source function or class name
+     * @param line The line number where the log was called
      */
-    void info(const QString& message, const QString& source = QString());
+    void info(const QString& message, const QString& source = QString(), int line = -1);
     /**
      * @brief Logs a warning message
      * @param message The log message
      * @param source The source function or class name
+     * @param line The line number where the log was called
      */
-    void warning(const QString& message, const QString& source = QString());
+    void warning(const QString& message, const QString& source = QString(), int line = -1);
     /**
      * @brief Logs an error message
      * @param message The log message
      * @param source The source function or class name
+     * @param line The line number where the log was called
      */
-    void error(const QString& message, const QString& source = QString());
+    void error(const QString& message, const QString& source = QString(), int line = -1);
     /**
      * @brief Logs a fatal error message
      * @param message The log message
      * @param source The source function or class name
+     * @param line The line number where the log was called
      */
-    void fatal(const QString& message, const QString& source = QString());
+    void fatal(const QString& message, const QString& source = QString(), int line = -1);
+
+    /**
+     * @brief Logs a message with specified level
+     * @param level The log level
+     * @param message The log message
+     * @param source The source function or class name
+     * @param line The line number where the log was called
+     */
+    void log(LogLevel level, const QString& message, const QString& source = QString(), int line = -1);
 
     /**
      * @brief Logs a message with key-value pairs
      * @param level The log level
      * @param data The key-value pairs to log
      * @param source The source function or class name
+     * @param line The line number where the log was called
      */
-    void log(LogLevel level, const QString& message, const QString& source = QString());
-
-    /**
-     * @brief Logs a message with key-value pairs
-     * @param level The log level
-     * @param data The key-value pairs to log
-     * @param source The source function or class name
-     */
-    void logData(LogLevel level, const QMap<QString, QVariant>& data, const QString& source = QString());
+    void logData(LogLevel level, const QMap<QString, QVariant>& data, const QString& source = QString(), int line = -1);
 
     /**
      * @brief Gets the current log level
@@ -158,9 +165,10 @@ private:
      * @param level The log level for the message
      * @param message The message to format
      * @param source The source of the message
+     * @param line The line number where the log was called
      * @return Formatted log message string
      */
-    QString formatLogMessage(LogLevel level, const QString& message, const QString& source);
+    QString formatLogMessage(LogLevel level, const QString& message, const QString& source, int line = -1);
     /**
      * @brief Writes a message to the log file
      * @param message The formatted message to write
@@ -168,12 +176,12 @@ private:
     void writeToLog(const QString& message);
 };
 
-// Convenience macros
-#define LOG_DEBUG(msg) Logger::instance()->debug(msg, Q_FUNC_INFO)
-#define LOG_INFO(msg) Logger::instance()->info(msg, Q_FUNC_INFO)
-#define LOG_WARNING(msg) Logger::instance()->warning(msg, Q_FUNC_INFO)
-#define LOG_ERROR(msg) Logger::instance()->error(msg, Q_FUNC_INFO)
-#define LOG_FATAL(msg) Logger::instance()->fatal(msg, Q_FUNC_INFO)
+// Convenience macros with line number
+#define LOG_DEBUG(msg) Logger::instance()->debug(msg, Q_FUNC_INFO, __LINE__)
+#define LOG_INFO(msg) Logger::instance()->info(msg, Q_FUNC_INFO, __LINE__)
+#define LOG_WARNING(msg) Logger::instance()->warning(msg, Q_FUNC_INFO, __LINE__)
+#define LOG_ERROR(msg) Logger::instance()->error(msg, Q_FUNC_INFO, __LINE__)
+#define LOG_FATAL(msg) Logger::instance()->fatal(msg, Q_FUNC_INFO, __LINE__)
 
 // Macro for logging with data
-#define LOG_DATA(level, data) Logger::instance()->logData(level, data, Q_FUNC_INFO)
+#define LOG_DATA(level, data) Logger::instance()->logData(level, data, Q_FUNC_INFO, __LINE__)
