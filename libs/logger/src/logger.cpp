@@ -171,18 +171,35 @@ QString Logger::formatLogMessage(LogLevel level, const QString& message, const Q
         formattedMsg = QString("[%1] [%2] [PID:%3] [TID:%4] %5")
             .arg(timestamp, levelStr, pid, threadId, message);
     } else {
-        QString shortSource = source;
-        // Extract just the function name from Q_FUNC_INFO if possible
+        // Parse patterns like 'getService<class MachineModel>' and convert to 'MachineModel::getService'
+        QString sourceInfo = source;
+
+        // Extract the fully qualified name without parameters
         int parenPos = source.indexOf('(');
         if (parenPos > 0) {
-            int lastColonPos = source.lastIndexOf(':', parenPos);
-            if (lastColonPos > 0) {
-                shortSource = source.mid(lastColonPos + 1, parenPos - lastColonPos - 1);
+            sourceInfo = source.left(parenPos);
+
+            // Check for template-like format: "method<class ClassName>"
+            int templateStartPos = sourceInfo.indexOf('<');
+            int templateEndPos = sourceInfo.indexOf('>');
+
+            if (templateStartPos > 0 && templateEndPos > templateStartPos) {
+                QString methodName = sourceInfo.left(templateStartPos);
+                QString templateContent = sourceInfo.mid(templateStartPos + 1, templateEndPos - templateStartPos - 1);
+
+                // Check if it contains "class" keyword
+                if (templateContent.contains("class ")) {
+                    QString className = templateContent.mid(templateContent.indexOf("class ") + 6).trimmed();
+                    if (!className.isEmpty()) {
+                        // Rearrange to "ClassName::methodName"
+                        sourceInfo = className + "::" + methodName;
+                    }
+                }
             }
         }
 
         formattedMsg = QString("[%1] [%2] [PID:%3] [TID:%4] [%5] %6")
-            .arg(timestamp, levelStr, pid, threadId, shortSource, message);
+            .arg(timestamp, levelStr, pid, threadId, sourceInfo, message);
     }
 
     return formattedMsg;
