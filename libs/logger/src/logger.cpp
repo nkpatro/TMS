@@ -171,33 +171,36 @@ QString Logger::formatLogMessage(LogLevel level, const QString& message, const Q
         formattedMsg = QString("[%1] [%2] [PID:%3] [TID:%4] %5")
             .arg(timestamp, levelStr, pid, threadId, message);
     } else {
-        // Parse patterns like 'getService<class MachineModel>' and convert to 'MachineModel::getService'
+        // For enhanced visualization, extract just ClassName::methodName
         QString sourceInfo = source;
 
         // Extract the fully qualified name without parameters
         int parenPos = source.indexOf('(');
         if (parenPos > 0) {
-            sourceInfo = source.left(parenPos);
+            QString fullName = source.left(parenPos);
 
-            // Check for template-like format: "method<class ClassName>"
-            int templateStartPos = sourceInfo.indexOf('<');
-            int templateEndPos = sourceInfo.indexOf('>');
+            // Count double-colons to determine if we have namespaces
+            int colonCount = fullName.count("::");
 
-            if (templateStartPos > 0 && templateEndPos > templateStartPos) {
-                QString methodName = sourceInfo.left(templateStartPos);
-                QString templateContent = sourceInfo.mid(templateStartPos + 1, templateEndPos - templateStartPos - 1);
+            if (colonCount >= 1) {
+                // We have at least one class/namespace separator
+                int lastColonPos = fullName.lastIndexOf("::");
 
-                // Check if it contains "class" keyword
-                if (templateContent.contains("class ")) {
-                    QString className = templateContent.mid(templateContent.indexOf("class ") + 6).trimmed();
-                    if (!className.isEmpty()) {
-                        // Rearrange to "ClassName::methodName"
-                        sourceInfo = className + "::" + methodName;
-                    }
+                if (colonCount >= 2) {
+                    // We have both namespace and class, try to get just ClassName::methodName
+                    int secondLastColonPos = fullName.lastIndexOf("::", lastColonPos - 1);
+                    sourceInfo = fullName.mid(secondLastColonPos + 2);
+                } else {
+                    // Only one separator, use as is (likely ClassName::methodName)
+                    sourceInfo = fullName;
                 }
+            } else {
+                // No class separator, use the full name (likely just a function)
+                sourceInfo = fullName;
             }
         }
 
+        sourceInfo = sourceInfo.replace("__cdecl ", "");
         formattedMsg = QString("[%1] [%2] [PID:%3] [TID:%4] [%5] %6")
             .arg(timestamp, levelStr, pid, threadId, sourceInfo, message);
     }
