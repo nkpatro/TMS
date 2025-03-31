@@ -36,10 +36,10 @@ QString TokenRepository::buildSaveQuery()
 {
     // Use JSONB type for PostgreSQL
     return "INSERT INTO auth_tokens "
-           "(id, token_id, token_type, user_id, token_data, expires_at, created_at, "
+           "(token_id, token_type, user_id, token_data, expires_at, created_at, "
            "created_by, updated_at, updated_by, device_info, last_used_at) "
            "VALUES "
-           "(:id, :token_id, :token_type, :user_id, :token_data::jsonb, :expires_at, :created_at, "
+           "(:token_id, :token_type, :user_id, :token_data::jsonb, :expires_at, :created_at, "
            ":created_by, :updated_at, :updated_by, :device_info::jsonb, :last_used_at) "
            "RETURNING token_id";
 }

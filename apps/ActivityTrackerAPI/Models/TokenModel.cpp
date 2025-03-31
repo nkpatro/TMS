@@ -2,8 +2,7 @@
 
 TokenModel::TokenModel(QObject *parent) : QObject(parent), m_revoked(false)
 {
-    // Initialize with default values
-    m_id = QUuid::createUuid();
+//    m_id = QUuid::createUuid();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();
     m_lastUsedAt = m_createdAt;

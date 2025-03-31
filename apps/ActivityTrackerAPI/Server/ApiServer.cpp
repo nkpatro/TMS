@@ -223,9 +223,6 @@ void ApiServer::setupControllers()
         AuthFramework::instance().setAutoCreateUsers(true);
         AuthFramework::instance().setEmailDomain("redefine.co");
 
-        // Initialize token storage (load from database into memory)
-        AuthFramework::instance().initializeTokenStorage();
-
         // Set token expiry times
         AuthFramework::instance().setTokenExpiry(AuthFramework::UserToken, 24);
         AuthFramework::instance().setTokenExpiry(AuthFramework::ServiceToken, 168);

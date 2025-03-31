@@ -7,7 +7,7 @@ SessionModel::SessionModel(QObject *parent)
     : QObject(parent),
       m_timeSincePreviousSession(0)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_loginTime = QDateTime::currentDateTimeUtc();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();

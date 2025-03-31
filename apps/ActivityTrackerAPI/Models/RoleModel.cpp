@@ -3,7 +3,7 @@
 RoleModel::RoleModel(QObject *parent)
     : QObject(parent)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();
 }

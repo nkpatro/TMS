@@ -29,6 +29,7 @@ public:
     QList<QSharedPointer<SessionEventModel>> getByUserId(const QUuid &userId, int limit = 0, int offset = 0);
     QList<QSharedPointer<SessionEventModel>> getByMachineId(const QString &machineId, int limit = 0, int offset = 0);
     QJsonObject getSessionEventSummary(const QUuid &sessionId);
+    bool save(SessionEventModel* event);
 
 protected:
     // Required BaseRepository abstract method implementations

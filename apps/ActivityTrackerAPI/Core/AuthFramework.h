@@ -8,7 +8,6 @@
 #include <QMap>
 #include <QDateTime>
 #include <QCryptographicHash>
-#include <QMutex>
 
 class AuthController;
 class UserRepository;
@@ -21,8 +20,7 @@ class TokenRepository;
  *
  * This class provides centralized authentication and authorization services
  * including token management, user validation, and permission checking.
- * It integrates with database repositories for persistence and uses
- * in-memory caching for performance optimization.
+ * It integrates with database repositories for persistence.
  */
 class AuthFramework : public QObject {
     Q_OBJECT
@@ -82,42 +80,9 @@ public:
     TokenRepository* getTokenRepository() const { return m_tokenRepository; }
 
     /**
-     * @brief Initialize token storage from database
-     * @return True if successful, false otherwise
+     * @brief Purge expired tokens from the database
      */
-    bool initializeTokenStorage();
-
-    // Caching control
-
-    /**
-     * @brief Check if in-memory caching is enabled
-     * @return True if caching is enabled, false otherwise
-     */
-    bool isCacheEnabled() const { return m_useCaching; }
-
-    /**
-     * @brief Enable or disable in-memory token caching
-     * @param enabled Whether caching should be enabled
-     *
-     * When disabled, all token operations will interact directly with the database.
-     * This may be slower but ensures all operations use the most up-to-date information.
-     */
-    void setCacheEnabled(bool enabled) { m_useCaching = enabled; }
-
-    /**
-     * @brief Clear the in-memory token cache
-     *
-     * This clears all in-memory token caches but leaves the database tokens intact.
-     * Useful when needing to force revalidation from the database.
-     */
-    void clearTokenCache();
-
-    /**
-     * @brief Refresh the in-memory token cache from the database
-     *
-     * This clears the in-memory cache and then repopulates it from the database.
-     */
-    void refreshTokenCache();
+    void purgeExpiredTokens();
 
     // Token extraction methods
 
@@ -229,11 +194,6 @@ public:
      * @return True if token was revoked
      */
     bool removeToken(const QString& token);
-
-    /**
-     * @brief Remove expired tokens from memory and database
-     */
-    void purgeExpiredTokens();
 
     /**
      * @brief Check if a token is expired
@@ -369,16 +329,6 @@ private:
     AuthFramework(const AuthFramework&) = delete;
     AuthFramework& operator=(const AuthFramework&) = delete;
 
-    // Helper methods for caching
-    void addTokenToCache(const QString& token, const QJsonObject& tokenData);
-    void removeTokenFromCache(const QString& token);
-    void addServiceTokenToCache(const QString& token, const QJsonObject& tokenData);
-    void removeServiceTokenFromCache(const QString& token);
-    void addApiKeyToCache(const QString& key, const QJsonObject& keyData);
-    void removeApiKeyFromCache(const QString& key);
-    void addRefreshTokenToCache(const QString& token, const QJsonObject& tokenData);
-    void removeRefreshTokenFromCache(const QString& token);
-
     // Helper methods for token/hash generation
     QString generateHash(const QString& input) const;
     QByteArray generateHash(const QByteArray& input) const;
@@ -390,21 +340,10 @@ private:
     RoleRepository* m_roleRepository = nullptr;
     TokenRepository* m_tokenRepository = nullptr;
 
-    // Token caches
-    QMap<QString, QJsonObject> m_tokenToUserData;      // User tokens
-    QMap<QString, QJsonObject> m_serviceTokens;        // Service tokens
-    QMap<QString, QJsonObject> m_apiKeys;              // API keys
-    QMap<QString, QJsonObject> m_refreshTokens;        // Refresh tokens
-
     // Configuration
     QMap<TokenType, int> m_tokenExpiryHours;
     QString m_emailDomain = "redefine.co";
     bool m_autoCreateUsers = true;
-    bool m_useCaching = true;                          // Whether to use in-memory caching
-
-    // Thread synchronization
-    QMutex m_tokenMutex;                               // For user tokens, service tokens, and refresh tokens
-    QMutex m_apiKeyMutex;                              // For API keys
 };
 
 #endif // AUTHFRAMEWORK_H

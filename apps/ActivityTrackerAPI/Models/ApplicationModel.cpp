@@ -5,7 +5,7 @@ ApplicationModel::ApplicationModel(QObject *parent)
       m_isRestricted(false),
       m_trackingEnabled(true)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();
 }

@@ -4,7 +4,7 @@ ActivityEventModel::ActivityEventModel(QObject *parent)
     : QObject(parent),
       m_eventType(EventTypes::ActivityEventType::MouseClick) // Default to avoid uninitialized enum
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_eventTime = QDateTime::currentDateTimeUtc();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();

@@ -6,7 +6,7 @@ UserModel::UserModel(QObject *parent)
       m_active(true),
       m_verified(false)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();
 }

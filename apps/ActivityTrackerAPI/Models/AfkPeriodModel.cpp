@@ -3,7 +3,7 @@
 AfkPeriodModel::AfkPeriodModel(QObject *parent)
     : QObject(parent)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_startTime = QDateTime::currentDateTimeUtc();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();

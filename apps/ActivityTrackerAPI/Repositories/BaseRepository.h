@@ -500,6 +500,11 @@ public:
         // Create a copy of the query template that we'll replace parameters in
         QString queryWithValues = queryTemplate;
 
+        // Enhanced logging header
+        LOG_INFO("======= DETAILED SQL QUERY LOGGING =======");
+        LOG_INFO(QString("Original query: %1").arg(queryTemplate));
+        LOG_INFO("Parameters:");
+
         // Replace each parameter with its value
         for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
             QString paramName = ":" + it.key();
@@ -508,12 +513,16 @@ public:
             // Format the value based on its type
             if (it.value().type() == QVariant::String) {
                 paramValue = "'" + it.value().toString() + "'";
+                LOG_INFO(QString("  %1 (String) = %2").arg(it.key(), paramValue));
             } else if (it.value().type() == QVariant::DateTime) {
                 paramValue = "'" + it.value().toDateTime().toString(Qt::ISODate) + "'";
+                LOG_INFO(QString("  %1 (DateTime) = %2").arg(it.key(), paramValue));
             } else if (it.value().isNull()) {
                 paramValue = "NULL";
+                LOG_INFO(QString("  %1 = NULL").arg(it.key()));
             } else {
                 paramValue = it.value().toString();
+                LOG_INFO(QString("  %1 (Other) = %2").arg(it.key(), paramValue));
             }
 
             // Replace all occurrences of the parameter in the query
@@ -522,6 +531,15 @@ public:
 
         // Log the complete query with values
         LOG_INFO(QString("COMPLETE SQL QUERY: %1").arg(queryWithValues));
+
+        // Log additional DB metadata
+        if (m_dbService) {
+            LOG_INFO(QString("Using database service: %1").arg(typeid(*m_dbService).name()));
+            LOG_INFO(QString("Last error: %1").arg(m_dbService->lastError()));
+        } else {
+            LOG_WARNING("Database service is NULL!");
+        }
+        LOG_INFO("=========================================");
 
         return true;
     }

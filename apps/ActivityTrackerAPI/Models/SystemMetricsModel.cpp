@@ -7,7 +7,7 @@ SystemMetricsModel::SystemMetricsModel(QObject *parent)
       m_gpuUsage(0.0),
       m_memoryUsage(0.0)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_measurementTime = QDateTime::currentDateTimeUtc();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();

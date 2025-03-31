@@ -5,7 +5,7 @@ SessionEventModel::SessionEventModel(QObject *parent)
       m_eventType(EventTypes::SessionEventType::Login), // Default to avoid uninitialized enum
       m_isRemote(false)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_eventTime = QDateTime::currentDateTimeUtc();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();

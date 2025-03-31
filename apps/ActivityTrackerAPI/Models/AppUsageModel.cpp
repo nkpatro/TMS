@@ -5,7 +5,7 @@ AppUsageModel::AppUsageModel(QObject *parent)
     : QObject(parent),
       m_isActive(true)
 {
-    m_id = QUuid::createUuid();
+    // m_id = QUuid::createUuid();
     m_startTime = QDateTime::currentDateTimeUtc();
     m_createdAt = QDateTime::currentDateTimeUtc();
     m_updatedAt = QDateTime::currentDateTimeUtc();

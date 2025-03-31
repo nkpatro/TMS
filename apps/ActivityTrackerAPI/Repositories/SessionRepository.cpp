@@ -241,6 +241,12 @@ QSharedPointer<SessionModel> SessionRepository::getActiveSessionForUser(const QU
     LOG_DEBUG(QString("Getting active session for user ID: %1 and machine ID: %2")
               .arg(userId.toString(), machineId.toString()));
 
+    if (userId.isNull())
+    {
+        LOG_DEBUG(QString("Getting active session for user ID: %1 and machine ID: %2")
+              .arg(userId.toString(), machineId.toString()));
+    }
+
     if (!isInitialized()) {
         LOG_ERROR("Cannot get active session: Repository not initialized");
         return nullptr;
@@ -1093,7 +1099,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
             // No session for today - create a new one
             LOG_INFO("Creating new session");
             SessionModel* newSession = new SessionModel();
-            newSession->setId(QUuid::createUuid());
+            // newSession->setId(QUuid::createUuid());
             newSession->setUserId(userId);
             newSession->setLoginTime(currentDateTime);
             newSession->setMachineId(machineId);
@@ -1137,8 +1143,9 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
             newSession->setUpdatedAt(currentDateTime);
 
             // Verify all required fields are set before saving
-            if (!newSession->id().isNull() && !newSession->userId().isNull() &&
-                !newSession->machineId().isNull() && newSession->loginTime().isValid()) {
+            if (!newSession->userId().isNull()
+                && !newSession->machineId().isNull()
+                && newSession->loginTime().isValid()) {
 
                 LOG_DEBUG(QString("New session validation passed: login_time=%1")
                     .arg(newSession->loginTime().toString(Qt::ISODate)));
@@ -1501,13 +1508,36 @@ bool SessionRepository::createSessionLoginEvent(
         return true; // Already exists, no need to create
     }
 
-    // Create the login event with retry logic
+    // Create new event with detailed logging
+    LOG_INFO("===== CREATING SESSION LOGIN EVENT =====");
+    LOG_INFO(QString("Session ID: %1").arg(sessionId.toString()));
+    LOG_INFO(QString("User ID: %1").arg(userId.toString()));
+    LOG_INFO(QString("Machine ID: %1").arg(machineId.toString()));
+    LOG_INFO(QString("Login Time: %1").arg(loginTime.toString(Qt::ISODate)));
+    LOG_INFO(QString("Is Remote: %1").arg(isRemote ? "true" : "false"));
+    LOG_INFO(QString("Terminal Session ID: %1").arg(terminalSessionId.isEmpty() ? "none" : terminalSessionId));
+
+    // Check if session exists in database
+    if (!exists(sessionId)) {
+        LOG_ERROR(QString("Cannot create login event - Session %1 does NOT exist in database!").arg(sessionId.toString()));
+        return false;
+    } else {
+        LOG_INFO(QString("Session %1 exists in database").arg(sessionId.toString()));
+    }
+
+    // Create retry loop for event creation
     const int MAX_RETRIES = 3;
     for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        SessionEventModel* event = new SessionEventModel();
+        if (attempt > 1) {
+            LOG_INFO(QString("Retry attempt %1 of %2").arg(attempt).arg(MAX_RETRIES));
+            // Brief pause before retry
+            QThread::msleep(100 * attempt);
+        }
 
-        // Generate a new UUID for each attempt
+        SessionEventModel* event = new SessionEventModel();
         event->setId(QUuid::createUuid());
+        LOG_INFO(QString("Generated Event ID: %1").arg(event->id().toString()));
+
         event->setSessionId(sessionId);
         event->setEventType(EventTypes::SessionEventType::Login);
         event->setEventTime(loginTime);
@@ -1519,43 +1549,49 @@ bool SessionRepository::createSessionLoginEvent(
             event->setTerminalSessionId(terminalSessionId);
         }
 
-        // Add context data for troubleshooting
-        QJsonObject eventData;
-        if (attempt > 1) {
-            eventData["retry_attempt"] = attempt;
-        }
-        event->setEventData(eventData);
-
-        // Set metadata
-        QDateTime currentTime = QDateTime::currentDateTimeUtc();
+        // Add metadata
+        QDateTime now = QDateTime::currentDateTimeUtc();
         event->setCreatedBy(userId);
         event->setUpdatedBy(userId);
-        event->setCreatedAt(currentTime);
-        event->setUpdatedAt(currentTime);
+        event->setCreatedAt(now);
+        event->setUpdatedAt(now);
 
+        // Now try to save the event
         bool success = eventRepository->save(event);
-        delete event;  // Clean up regardless of success
 
         if (success) {
-            LOG_INFO(QString("Login event created for session: %1 at time: %2%3")
-                    .arg(sessionId.toString(), loginTime.toString(Qt::ISODate))
-                    .arg(attempt > 1 ? QString(" (attempt %1)").arg(attempt) : ""));
+            LOG_INFO(QString("Login event created successfully: %1 (attempt %2)")
+                     .arg(event->id().toString())
+                     .arg(attempt));
+            delete event;
             return true;
-        }
-        else if (attempt < MAX_RETRIES) {
-            LOG_WARNING(QString("Failed to create login event for session: %1 (attempt %2), retrying...")
-                      .arg(sessionId.toString())
-                      .arg(attempt));
-            // Brief delay before retry
-            QThread::msleep(100 * attempt);  // Increasing delay with each attempt
-        }
-        else {
-            LOG_ERROR(QString("Failed to create login event for session: %1 after %2 attempts")
-                    .arg(sessionId.toString())
-                    .arg(MAX_RETRIES));
+        } else {
+            LOG_ERROR(QString("Failed to create login event! Error: %1 (attempt %2)")
+                     .arg(eventRepository->lastError())
+                     .arg(attempt));
+
+            // Additional debugging for specific cases
+            if (eventRepository->lastError().contains("constraint", Qt::CaseInsensitive)) {
+                LOG_ERROR("Failure appears to be a constraint violation");
+            }
+            if (eventRepository->lastError().contains("foreign key", Qt::CaseInsensitive)) {
+                LOG_ERROR("Failure appears to be a foreign key constraint");
+            }
+            if (eventRepository->lastError().contains("null", Qt::CaseInsensitive)) {
+                LOG_ERROR("Failure appears to involve NULL values");
+            }
+
+            delete event;
+
+            // Continue to retry unless this was the last attempt
+            if (attempt == MAX_RETRIES) {
+                LOG_ERROR("All retry attempts failed");
+                break;
+            }
         }
     }
 
+    LOG_INFO("=======================================");
     return false;
 }
 

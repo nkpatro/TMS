@@ -14,7 +14,6 @@
 #include <QRandomGenerator>
 #include <QDateTime>
 #include <QJsonDocument>
-#include <QMutexLocker>
 
 AuthFramework& AuthFramework::instance() {
     static AuthFramework instance;
@@ -23,7 +22,7 @@ AuthFramework& AuthFramework::instance() {
 
 AuthFramework::AuthFramework(QObject* parent) : QObject(parent) {
     LOG_INFO("AuthFramework created");
-    
+
     // Initialize token expiry times
     m_tokenExpiryHours[UserToken] = 24;       // 1 day
     m_tokenExpiryHours[ServiceToken] = 168;   // 7 days
@@ -109,43 +108,17 @@ QString AuthFramework::extractApiKey(const QHttpServerRequest& request) {
 
 bool AuthFramework::validateToken(const QString& token, QJsonObject& userData) {
     LOG_DEBUG(QString("Validating token: %1").arg(token));
-    
-    // First check in-memory cache if caching is enabled
-    if (m_useCaching) {
-        QMutexLocker locker(&m_tokenMutex);
-        if (m_tokenToUserData.contains(token)) {
-            userData = m_tokenToUserData[token];
 
-            // Check if token is expired
-            if (isTokenExpired(userData)) {
-                LOG_WARNING(QString("Token validation failed: Token expired - %1").arg(token));
-                m_tokenToUserData.remove(token);
-                return false;
-            }
-
-            LOG_DEBUG(QString("Token validated successfully from memory cache: %1").arg(token));
-            return true;
-        }
+    if (!m_tokenRepository || !m_tokenRepository->isInitialized()) {
+        LOG_WARNING("Token repository not initialized, token validation failed");
+        return false;
     }
 
-    // If not in memory cache or caching disabled, try the database
-    if (m_tokenRepository && m_tokenRepository->isInitialized()) {
-        bool valid = m_tokenRepository->validateToken(token, userData);
+    bool valid = m_tokenRepository->validateToken(token, userData);
 
-        if (valid) {
-            // Add to in-memory cache if caching is enabled
-            if (m_useCaching) {
-                addTokenToCache(token, userData);
-            }
-            
-            // Update last used time in database
-            m_tokenRepository->updateTokenLastUsed(token);
-            
-            LOG_DEBUG(QString("Token validated from database: %1").arg(token));
-            return true;
-        }
-    } else {
-        LOG_WARNING("Token repository not initialized, token validation failed");
+    if (valid) {
+        LOG_DEBUG(QString("Token validated from database: %1").arg(token));
+        return true;
     }
 
     LOG_WARNING(QString("Token validation failed: Token not found or invalid - %1").arg(token));
@@ -154,46 +127,24 @@ bool AuthFramework::validateToken(const QString& token, QJsonObject& userData) {
 
 bool AuthFramework::validateServiceToken(const QString& token, QJsonObject& tokenData) {
     LOG_DEBUG(QString("Validating service token: %1").arg(token));
-    
-    // First check in-memory cache if caching is enabled
-    if (m_useCaching) {
-        QMutexLocker locker(&m_tokenMutex);
-        if (m_serviceTokens.contains(token)) {
-            tokenData = m_serviceTokens[token];
 
-            // Check if token is expired
-            if (isTokenExpired(tokenData)) {
-                LOG_WARNING(QString("Service token expired: %1").arg(token));
-                m_serviceTokens.remove(token);
-                return false;
-            }
-
-            LOG_DEBUG(QString("Service token validated from memory cache: %1").arg(token));
-            return true;
-        }
-    }
-    
-    // If not in memory or caching disabled, try the database
-    if (m_tokenRepository && m_tokenRepository->isInitialized()) {
-        // Get token data from the database
-        auto tokenModel = m_tokenRepository->getByTokenId(token);
-        if (tokenModel && !tokenModel->isRevoked() && !tokenModel->isExpired()) {
-            // Convert to token data
-            tokenData = tokenModel->tokenData();
-            
-            // Add to in-memory cache if caching is enabled
-            if (m_useCaching) {
-                addServiceTokenToCache(token, tokenData);
-            }
-            
-            // Update last used time
-            m_tokenRepository->updateTokenLastUsed(token);
-            
-            LOG_DEBUG(QString("Service token validated from database: %1").arg(token));
-            return true;
-        }
-    } else {
+    if (!m_tokenRepository || !m_tokenRepository->isInitialized()) {
         LOG_WARNING("Token repository not initialized, service token validation failed");
+        return false;
+    }
+
+    // Get token data from the database
+    auto tokenModel = m_tokenRepository->getByTokenId(token);
+
+    if (tokenModel && !tokenModel->isRevoked() && !tokenModel->isExpired()) {
+        // Convert to token data
+        tokenData = tokenModel->tokenData();
+
+        // Update last used time
+        m_tokenRepository->updateTokenLastUsed(token);
+
+        LOG_DEBUG(QString("Service token validated from database: %1").arg(token));
+        return true;
     }
 
     LOG_WARNING(QString("Service token validation failed: %1").arg(token));
@@ -202,46 +153,24 @@ bool AuthFramework::validateServiceToken(const QString& token, QJsonObject& toke
 
 bool AuthFramework::validateApiKey(const QString& key, QJsonObject& apiKeyData) {
     LOG_DEBUG(QString("Validating API key: %1").arg(key));
-    
-    // First check in-memory cache if caching is enabled
-    if (m_useCaching) {
-        QMutexLocker locker(&m_apiKeyMutex);
-        if (m_apiKeys.contains(key)) {
-            apiKeyData = m_apiKeys[key];
 
-            // Check if API key is expired
-            if (isTokenExpired(apiKeyData)) {
-                LOG_WARNING(QString("API key expired: %1").arg(key));
-                m_apiKeys.remove(key);
-                return false;
-            }
-
-            LOG_DEBUG(QString("API key validated from memory cache: %1").arg(key));
-            return true;
-        }
-    }
-    
-    // If not in memory or caching disabled, try the database
-    if (m_tokenRepository && m_tokenRepository->isInitialized()) {
-        // Get API key data from the database
-        auto keyModel = m_tokenRepository->getByTokenId(key);
-        if (keyModel && !keyModel->isRevoked() && !keyModel->isExpired()) {
-            // Convert to API key data
-            apiKeyData = keyModel->tokenData();
-            
-            // Add to in-memory cache if caching is enabled
-            if (m_useCaching) {
-                addApiKeyToCache(key, apiKeyData);
-            }
-            
-            // Update last used time
-            m_tokenRepository->updateTokenLastUsed(key);
-            
-            LOG_DEBUG(QString("API key validated from database: %1").arg(key));
-            return true;
-        }
-    } else {
+    if (!m_tokenRepository || !m_tokenRepository->isInitialized()) {
         LOG_WARNING("Token repository not initialized, API key validation failed");
+        return false;
+    }
+
+    // Get API key data from the database
+    auto keyModel = m_tokenRepository->getByTokenId(key);
+
+    if (keyModel && !keyModel->isRevoked() && !keyModel->isExpired()) {
+        // Convert to API key data
+        apiKeyData = keyModel->tokenData();
+
+        // Update last used time
+        m_tokenRepository->updateTokenLastUsed(key);
+
+        LOG_DEBUG(QString("API key validated from database: %1").arg(key));
+        return true;
     }
 
     LOG_WARNING(QString("API key validation failed: %1").arg(key));
@@ -256,7 +185,7 @@ QString AuthFramework::generateToken(const QJsonObject& userData, int expiryHour
     LOG_DEBUG(QString("Generating token for user: %1").arg(userData["name"].toString()));
 
     QDateTime expiryTime = QDateTime::currentDateTimeUtc().addSecs(expiryHours * 3600);
-    
+
     // Create token data with expiry
     QJsonObject tokenData = userData;
     tokenData["expires_at"] = expiryTime.toString(Qt::ISODate);
@@ -268,8 +197,7 @@ QString AuthFramework::generateToken(const QJsonObject& userData, int expiryHour
     QByteArray tokenBase = generateHash(QJsonDocument(tokenData).toJson());
     QString token = tokenBase.toHex();
 
-    // Store in database first (primary storage)
-    bool storedInDb = false;
+    // Store in database
     if (m_tokenRepository && m_tokenRepository->isInitialized()) {
         QUuid userId(userData["id"].toString());
 
@@ -280,9 +208,9 @@ QString AuthFramework::generateToken(const QJsonObject& userData, int expiryHour
         }
 
         // Use the saveToken method
-        storedInDb = m_tokenRepository->saveToken(
+        bool storedInDb = m_tokenRepository->saveToken(
             token, "user", userId, tokenData, expiryTime, createdBy);
-            
+
         if (!storedInDb) {
             LOG_ERROR(QString("Failed to store token in database: %1 - %2")
                      .arg(token, m_tokenRepository->lastError()));
@@ -290,12 +218,8 @@ QString AuthFramework::generateToken(const QJsonObject& userData, int expiryHour
             LOG_DEBUG(QString("Token stored in database: %1").arg(token));
         }
     } else {
-        LOG_WARNING("Token repository not available, token will only be stored in memory");
-    }
-
-    // Store token data in memory cache if caching is enabled
-    if (m_useCaching) {
-        addTokenToCache(token, tokenData);
+        LOG_WARNING("Token repository not available, token cannot be stored");
+        return QString(); // Return empty string to indicate failure
     }
 
     LOG_INFO(QString("Token generated for user: %1 (expires: %2)")
@@ -319,7 +243,7 @@ QString AuthFramework::generateServiceToken(
     if (expiryDays > 0) {
         expiryHours = expiryDays * 24;
     }
-    
+
     QDateTime expiryTime = QDateTime::currentDateTimeUtc().addSecs(expiryHours * 3600);
     QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -338,42 +262,40 @@ QString AuthFramework::generateServiceToken(
     QByteArray tokenBase = generateHash(QJsonDocument(tokenData).toJson());
     QString token = tokenBase.toHex();
 
-    // Store in database first (primary storage)
-    bool storedInDb = false;
+    // Store in database
     if (m_tokenRepository && m_tokenRepository->isInitialized()) {
         // First find or create the user
         QSharedPointer<UserModel> user = validateAndGetUserForTracking(username);
+
         if (user) {
             // Create device info object
             QJsonObject deviceInfo;
             deviceInfo["computer_name"] = computerName;
             deviceInfo["machine_id"] = machineId;
             deviceInfo["service_id"] = serviceId;
-            
+
             // Add device info to token data
             tokenData["device_info"] = deviceInfo;
-            
+
             // Save to database
-            storedInDb = m_tokenRepository->saveToken(
+            bool storedInDb = m_tokenRepository->saveToken(
                 token, "service", user->id(), tokenData, expiryTime);
-                
+
             if (!storedInDb) {
                 LOG_ERROR(QString("Failed to store service token in database: %1 - %2")
                          .arg(token, m_tokenRepository->lastError()));
+                return QString(); // Return empty string to indicate failure
             } else {
                 LOG_DEBUG(QString("Service token stored in database: %1").arg(token));
             }
         } else {
             LOG_ERROR(QString("Failed to find or create user for service token: %1")
                      .arg(username));
+            return QString(); // Return empty string to indicate failure
         }
     } else {
-        LOG_WARNING("Token repository not available, service token will only be stored in memory");
-    }
-
-    // Store token data in memory cache if caching is enabled
-    if (m_useCaching) {
-        addServiceTokenToCache(token, tokenData);
+        LOG_WARNING("Token repository not available, service token cannot be stored");
+        return QString(); // Return empty string to indicate failure
     }
 
     LOG_INFO(QString("Service token generated for: %1 on %2 (user: %3)")
@@ -407,30 +329,26 @@ QString AuthFramework::generateApiKey(
     // Generate a key with special prefix to distinguish it from tokens
     QByteArray randomData = generateHash(QJsonDocument(keyData).toJson());
     QString key = "apk_" + randomData.toHex().left(32);
-    
-    // Store in database first (primary storage)
-    bool storedInDb = false;
+
+    // Store in database
     if (m_tokenRepository && m_tokenRepository->isInitialized()) {
         // Add key to keyData
         keyData["token_id"] = key;
-        
+
         // Save to database - API keys are associated with the creator
-        storedInDb = m_tokenRepository->saveToken(
+        bool storedInDb = m_tokenRepository->saveToken(
             key, "api", createdBy, keyData, expiryTime, createdBy);
-            
+
         if (!storedInDb) {
             LOG_ERROR(QString("Failed to store API key in database: %1 - %2")
                      .arg(key, m_tokenRepository->lastError()));
+            return QString(); // Return empty string to indicate failure
         } else {
             LOG_DEBUG(QString("API key stored in database: %1").arg(key));
         }
     } else {
-        LOG_WARNING("Token repository not available, API key will only be stored in memory");
-    }
-
-    // Store API key data in memory cache if caching is enabled
-    if (m_useCaching) {
-        addApiKeyToCache(key, keyData);
+        LOG_WARNING("Token repository not available, API key cannot be stored");
+        return QString(); // Return empty string to indicate failure
     }
 
     LOG_INFO(QString("API key generated for service: %1 (expires: %2)")
@@ -447,7 +365,7 @@ QString AuthFramework::generateRefreshToken(const QJsonObject& userData, int exp
     if (expiryDays > 0) {
         expiryHours = expiryDays * 24;
     }
-    
+
     QDateTime expiryTime = QDateTime::currentDateTimeUtc().addSecs(expiryHours * 3600);
     QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -463,8 +381,7 @@ QString AuthFramework::generateRefreshToken(const QJsonObject& userData, int exp
     QByteArray tokenBase = generateHash(QJsonDocument(tokenData).toJson());
     QString token = "rt_" + tokenBase.toHex();
 
-    // Store in database first (primary storage)
-    bool storedInDb = false;
+    // Store in database
     if (m_tokenRepository && m_tokenRepository->isInitialized()) {
         QUuid userId(userData["id"].toString());
 
@@ -475,22 +392,19 @@ QString AuthFramework::generateRefreshToken(const QJsonObject& userData, int exp
         }
 
         // Save to database
-        storedInDb = m_tokenRepository->saveToken(
+        bool storedInDb = m_tokenRepository->saveToken(
             token, "refresh", userId, tokenData, expiryTime, createdBy);
-            
+
         if (!storedInDb) {
             LOG_ERROR(QString("Failed to store refresh token in database: %1 - %2")
                      .arg(token, m_tokenRepository->lastError()));
+            return QString(); // Return empty string to indicate failure
         } else {
             LOG_DEBUG(QString("Refresh token stored in database: %1").arg(token));
         }
     } else {
-        LOG_WARNING("Token repository not available, refresh token will only be stored in memory");
-    }
-
-    // Store token data in memory cache if caching is enabled
-    if (m_useCaching) {
-        addRefreshTokenToCache(token, tokenData);
+        LOG_WARNING("Token repository not available, refresh token cannot be stored");
+        return QString(); // Return empty string to indicate failure
     }
 
     LOG_INFO(QString("Refresh token generated for user: %1 (expires: %2)")
@@ -501,47 +415,26 @@ QString AuthFramework::generateRefreshToken(const QJsonObject& userData, int exp
 
 bool AuthFramework::refreshUserToken(const QString& refreshToken, QString& newToken, QJsonObject& userData) {
     LOG_DEBUG(QString("Refreshing token with refresh token: %1").arg(refreshToken));
-    
-    bool tokenFound = false;
-    
-    // First check in-memory cache if caching is enabled
-    if (m_useCaching) {
-        QMutexLocker locker(&m_tokenMutex);
-        if (m_refreshTokens.contains(refreshToken)) {
-            userData = m_refreshTokens[refreshToken];
-            tokenFound = true;
-            
-            // Check if token is expired
-            if (isTokenExpired(userData)) {
-                LOG_WARNING(QString("Refresh token expired: %1").arg(refreshToken));
-                m_refreshTokens.remove(refreshToken);
-                return false;
-            }
-        }
-    }
-    
-    // If not in memory or caching disabled, try the database
-    if (!tokenFound && m_tokenRepository && m_tokenRepository->isInitialized()) {
-        // Get refresh token data from the database
-        auto tokenModel = m_tokenRepository->getByTokenId(refreshToken);
-        if (tokenModel && !tokenModel->isRevoked() && !tokenModel->isExpired()) {
-            // Convert to token data
-            userData = tokenModel->tokenData();
-            tokenFound = true;
-        } else {
-            LOG_WARNING(QString("Refresh token not found in database or invalid: %1").arg(refreshToken));
-            return false;
-        }
-    }
-    
-    if (!tokenFound) {
-        LOG_WARNING(QString("Refresh token not found: %1").arg(refreshToken));
+
+    if (!m_tokenRepository || !m_tokenRepository->isInitialized()) {
+        LOG_WARNING("Token repository not initialized, token refresh failed");
         return false;
     }
 
+    // Get refresh token data from the database
+    auto tokenModel = m_tokenRepository->getByTokenId(refreshToken);
+
+    if (!tokenModel || tokenModel->isRevoked() || tokenModel->isExpired()) {
+        LOG_WARNING(QString("Refresh token not found in database or invalid: %1").arg(refreshToken));
+        return false;
+    }
+
+    // Convert to token data
+    userData = tokenModel->tokenData();
+
     // Remove the refresh-token specific fields
     userData.remove("is_refresh_token");
-    
+
     // Track the user for audit purposes
     QUuid userId;
     if (userData.contains("id")) {
@@ -554,15 +447,8 @@ bool AuthFramework::refreshUserToken(const QString& refreshToken, QString& newTo
     newToken = generateToken(userData);
 
     // Revoke the old refresh token in database
-    if (m_tokenRepository && m_tokenRepository->isInitialized()) {
-        m_tokenRepository->revokeToken(refreshToken, "Used for token refresh");
-    }
+    m_tokenRepository->revokeToken(refreshToken, "Used for token refresh");
 
-    // Remove the old refresh token from memory if caching is enabled
-    if (m_useCaching) {
-        removeRefreshTokenFromCache(refreshToken);
-    }
-    
     // Generate a new refresh token
     generateRefreshToken(userData);
 
@@ -572,130 +458,51 @@ bool AuthFramework::refreshUserToken(const QString& refreshToken, QString& newTo
 
 bool AuthFramework::removeToken(const QString& token) {
     LOG_INFO(QString("Removing token: %1").arg(token));
-    
-    bool removedFromDb = false;
-    
-    // Get user data for audit trail if it's in the cache and caching is enabled
+
+    if (!m_tokenRepository || !m_tokenRepository->isInitialized()) {
+        LOG_WARNING("Token repository not available, token cannot be removed");
+        return false;
+    }
+
+    // Get user data for audit trail
     QJsonObject userData;
     QString reason = "User logout";
     QUuid updatedBy;
-    
-    if (m_useCaching) {
-        QMutexLocker locker(&m_tokenMutex);
-        if (m_tokenToUserData.contains(token)) {
-            userData = m_tokenToUserData[token];
-            if (userData.contains("id")) {
-                updatedBy = QUuid(userData["id"].toString());
-            }
-            if (userData.contains("name")) {
-                reason = "Logout by user: " + userData["name"].toString();
-            }
+
+    // Validate token first to get user data
+    if (validateToken(token, userData)) {
+        if (userData.contains("id")) {
+            updatedBy = QUuid(userData["id"].toString());
+        }
+        if (userData.contains("name")) {
+            reason = "Logout by user: " + userData["name"].toString();
         }
     }
-    
-    // Revoke in database first (primary storage)
-    if (m_tokenRepository && m_tokenRepository->isInitialized()) {
-        // Use the revokeToken method to properly flag it in the database
-        removedFromDb = m_tokenRepository->revokeToken(token, reason);
-        
-        if (!removedFromDb) {
-            LOG_WARNING(QString("Failed to revoke token in database: %1 - %2")
-                       .arg(token, m_tokenRepository->lastError()));
-        } else {
-            LOG_DEBUG(QString("Token revoked in database: %1").arg(token));
-        }
+
+    // Use the revokeToken method to properly flag it in the database
+    bool removed = m_tokenRepository->revokeToken(token, reason);
+
+    if (removed) {
+        LOG_DEBUG(QString("Token revoked in database: %1").arg(token));
     } else {
-        LOG_WARNING("Token repository not available, token will only be removed from memory");
+        LOG_WARNING(QString("Failed to revoke token in database: %1 - %2")
+                   .arg(token, m_tokenRepository->lastError()));
     }
-    
-    // Remove from memory cache if caching is enabled
-    if (m_useCaching) {
-        removeTokenFromCache(token);
-        
-        // Also check if it's a refresh token
-        if (token.startsWith("rt_")) {
-            removeRefreshTokenFromCache(token);
-        }
-        // Also check if it's a service token
-        else if (m_serviceTokens.contains(token)) {
-            removeServiceTokenFromCache(token);
-        }
-        // Also check if it's an API key
-        else if (token.startsWith("apk_")) {
-            removeApiKeyFromCache(token);
-        }
-    }
-    
-    // For backward compatibility, return true if either database revocation
-    // succeeded or we didn't have a repository
-    return removedFromDb || !m_tokenRepository || !m_tokenRepository->isInitialized();
+
+    return removed;
 }
 
 void AuthFramework::purgeExpiredTokens() {
-    LOG_INFO("Purging expired tokens");
-    
-    // Purge from database first
-    int dbPurged = 0;
+    LOG_INFO("Purging expired tokens from database");
+
+    // Purge from database
     if (m_tokenRepository && m_tokenRepository->isInitialized()) {
-        dbPurged = m_tokenRepository->purgeExpiredTokens();
+        int dbPurged = m_tokenRepository->purgeExpiredTokens();
         LOG_INFO(QString("Purged %1 expired tokens from database").arg(dbPurged));
-    }
-    
-    // Purge from memory caches if caching is enabled
-    if (m_useCaching) {
-        QMutexLocker tokenLocker(&m_tokenMutex);
-        QMutexLocker apiKeyLocker(&m_apiKeyMutex);
-        
-        QDateTime now = QDateTime::currentDateTimeUtc();
-        int memoryPurged = 0;
-
-        // Check user tokens
-        QMutableMapIterator<QString, QJsonObject> tokenIt(m_tokenToUserData);
-        while (tokenIt.hasNext()) {
-            tokenIt.next();
-            if (isTokenExpired(tokenIt.value())) {
-                tokenIt.remove();
-                memoryPurged++;
-            }
-        }
-
-        // Check service tokens
-        QMutableMapIterator<QString, QJsonObject> serviceTokenIt(m_serviceTokens);
-        while (serviceTokenIt.hasNext()) {
-            serviceTokenIt.next();
-            if (isTokenExpired(serviceTokenIt.value())) {
-                serviceTokenIt.remove();
-                memoryPurged++;
-            }
-        }
-
-        // Check refresh tokens
-        QMutableMapIterator<QString, QJsonObject> refreshTokenIt(m_refreshTokens);
-        while (refreshTokenIt.hasNext()) {
-            refreshTokenIt.next();
-            if (isTokenExpired(refreshTokenIt.value())) {
-                refreshTokenIt.remove();
-                memoryPurged++;
-            }
-        }
-
-        // Check API keys
-        QMutableMapIterator<QString, QJsonObject> apiKeyIt(m_apiKeys);
-        while (apiKeyIt.hasNext()) {
-            apiKeyIt.next();
-            if (isTokenExpired(apiKeyIt.value())) {
-                apiKeyIt.remove();
-                memoryPurged++;
-            }
-        }
-
-        LOG_INFO(QString("Purged %1 expired tokens from memory cache").arg(memoryPurged));
+    } else {
+        LOG_WARNING("Token repository not initialized, cannot purge expired tokens");
     }
 }
-
-//------------------------------------------------------------------------------
-// Authorization methods
-//------------------------------------------------------------------------------
 
 bool AuthFramework::authorizeRequest(const QHttpServerRequest& request, QJsonObject& userData, bool strictMode) {
     LOG_DEBUG("Checking request authorization");
@@ -915,173 +722,8 @@ QSharedPointer<UserModel> AuthFramework::validateAndGetUserForTracking(const QSt
 }
 
 //------------------------------------------------------------------------------
-// Cache management
-//------------------------------------------------------------------------------
-
-void AuthFramework::clearTokenCache() {
-    LOG_INFO("Clearing token memory cache");
-    
-    QMutexLocker tokenLocker(&m_tokenMutex);
-    m_tokenToUserData.clear();
-    m_serviceTokens.clear();
-    m_refreshTokens.clear();
-    
-    QMutexLocker apiKeyLocker(&m_apiKeyMutex);
-    m_apiKeys.clear();
-    
-    LOG_INFO("Token memory cache cleared");
-}
-
-void AuthFramework::refreshTokenCache() {
-    LOG_INFO("Refreshing token memory cache from database");
-    
-    // Clear existing cache
-    clearTokenCache();
-    
-    // Reload from database if available
-    if (m_tokenRepository && m_tokenRepository->isInitialized()) {
-        initializeTokenStorage();
-    } else {
-        LOG_WARNING("Token repository not available, cannot refresh cache from database");
-    }
-}
-
-bool AuthFramework::initializeTokenStorage() {
-    LOG_INFO("Initializing token storage from database");
-
-    if (!m_tokenRepository || !m_tokenRepository->isInitialized()) {
-        LOG_WARNING("Token repository not available or not initialized");
-        return false;
-    }
-
-    if (!m_useCaching) {
-        LOG_INFO("In-memory caching is disabled, skipping token storage initialization");
-        return true;
-    }
-
-    // Load active tokens from database
-    QMap<QString, QJsonObject> storedTokens;
-    if (m_tokenRepository->loadActiveTokens(storedTokens)) {
-        int userTokenCount = 0;
-        int serviceTokenCount = 0;
-        int refreshTokenCount = 0;
-        int apiKeyCount = 0;
-
-        // Process each token based on its type
-        for (auto it = storedTokens.constBegin(); it != storedTokens.constEnd(); ++it) {
-            const QString& token = it.key();
-            const QJsonObject& tokenData = it.value();
-
-            // Skip expired tokens
-            if (isTokenExpired(tokenData)) {
-                continue;
-            }
-
-            // Check token type
-            if (tokenData.contains("token_type")) {
-                QString tokenType = tokenData["token_type"].toString();
-                
-                if (tokenType == "refresh" || (tokenData.contains("is_refresh_token") && tokenData["is_refresh_token"].toBool())) {
-                    m_refreshTokens[token] = tokenData;
-                    refreshTokenCount++;
-                }
-                else if (tokenType == "api" || token.startsWith("apk_")) {
-                    m_apiKeys[token] = tokenData;
-                    apiKeyCount++;
-                }
-                else if (tokenType == "service") {
-                    m_serviceTokens[token] = tokenData;
-                    serviceTokenCount++;
-                }
-                else {
-                    m_tokenToUserData[token] = tokenData;
-                    userTokenCount++;
-                }
-            }
-            else {
-                // Default to user token if no type is specified
-                m_tokenToUserData[token] = tokenData;
-                userTokenCount++;
-            }
-        }
-
-        LOG_INFO(QString("Loaded tokens from database: %1 user, %2 service, %3 refresh, %4 API keys")
-                .arg(userTokenCount).arg(serviceTokenCount).arg(refreshTokenCount).arg(apiKeyCount));
-        return true;
-    } else {
-        LOG_ERROR("Failed to load tokens from database");
-        return false;
-    }
-}
-
-void AuthFramework::addTokenToCache(const QString& token, const QJsonObject& tokenData) {
-    QMutexLocker locker(&m_tokenMutex);
-    m_tokenToUserData[token] = tokenData;
-    LOG_DEBUG(QString("User token added to memory cache: %1").arg(token));
-}
-
-void AuthFramework::removeTokenFromCache(const QString& token) {
-    QMutexLocker locker(&m_tokenMutex);
-    bool removed = m_tokenToUserData.remove(token) > 0;
-    if (removed) {
-        LOG_DEBUG(QString("User token removed from memory cache: %1").arg(token));
-    }
-}
-
-void AuthFramework::addServiceTokenToCache(const QString& token, const QJsonObject& tokenData) {
-    QMutexLocker locker(&m_tokenMutex);
-    m_serviceTokens[token] = tokenData;
-    LOG_DEBUG(QString("Service token added to memory cache: %1").arg(token));
-}
-
-void AuthFramework::removeServiceTokenFromCache(const QString& token) {
-    QMutexLocker locker(&m_tokenMutex);
-    bool removed = m_serviceTokens.remove(token) > 0;
-    if (removed) {
-        LOG_DEBUG(QString("Service token removed from memory cache: %1").arg(token));
-    }
-}
-
-void AuthFramework::addApiKeyToCache(const QString& key, const QJsonObject& keyData) {
-    QMutexLocker locker(&m_apiKeyMutex);
-    m_apiKeys[key] = keyData;
-    LOG_DEBUG(QString("API key added to memory cache: %1").arg(key));
-}
-
-void AuthFramework::removeApiKeyFromCache(const QString& key) {
-    QMutexLocker locker(&m_apiKeyMutex);
-    bool removed = m_apiKeys.remove(key) > 0;
-    if (removed) {
-        LOG_DEBUG(QString("API key removed from memory cache: %1").arg(key));
-    }
-}
-
-void AuthFramework::addRefreshTokenToCache(const QString& token, const QJsonObject& tokenData) {
-    QMutexLocker locker(&m_tokenMutex);
-    m_refreshTokens[token] = tokenData;
-    LOG_DEBUG(QString("Refresh token added to memory cache: %1").arg(token));
-}
-
-void AuthFramework::removeRefreshTokenFromCache(const QString& token) {
-    QMutexLocker locker(&m_tokenMutex);
-    bool removed = m_refreshTokens.remove(token) > 0;
-    if (removed) {
-        LOG_DEBUG(QString("Refresh token removed from memory cache: %1").arg(token));
-    }
-}
-
-//------------------------------------------------------------------------------
 // Utility methods
 //------------------------------------------------------------------------------
-
-bool AuthFramework::isTokenExpired(const QJsonObject& tokenData) const {
-    if (!tokenData.contains("expires_at")) {
-        return false;
-    }
-    
-    QDateTime expiryTime = QDateTime::fromString(tokenData["expires_at"].toString(), Qt::ISODate);
-    return QDateTime::currentDateTimeUtc() > expiryTime;
-}
 
 QString AuthFramework::createDefaultEmail(const QString& username) const {
     return username + "@" + m_emailDomain;
@@ -1093,13 +735,13 @@ QString AuthFramework::hashPassword(const QString& password) const {
 
 void AuthFramework::logAuthEvent(const QString& eventType, const QJsonObject& eventData) {
     LOG_INFO(QString("Auth event: %1").arg(eventType));
-    
+
     // This could be expanded to log to an audit table in the database
     // or to a specialized audit log file
     if (eventData.isEmpty()) {
         return;
     }
-    
+
     // Log relevant details from the event data
     QStringList dataStrings;
     for (auto it = eventData.constBegin(); it != eventData.constEnd(); ++it) {
@@ -1110,7 +752,7 @@ void AuthFramework::logAuthEvent(const QString& eventType, const QJsonObject& ev
         }
         dataStrings.append(QString("%1: %2").arg(key, it.value().toString()));
     }
-    
+
     LOG_DEBUG(QString("Auth event details: %1").arg(dataStrings.join(", ")));
 }
 
@@ -1144,16 +786,17 @@ QJsonObject AuthFramework::userToJson(UserModel* user) const {
     // Add role information if role repository is available
     if (m_roleRepository) {
         QJsonArray roles;
-        
+
         // This would need to be implemented with appropriate queries to get user roles
         // For example:
         // QList<QSharedPointer<RoleModel>> userRoles = m_roleRepository->getRolesForUser(user->id());
         // for (const auto& role : userRoles) {
         //     roles.append(role->code());
         // }
-        
+
         json["roles"] = roles;
     }
 
     return json;
 }
+

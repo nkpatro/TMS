@@ -487,6 +487,7 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             LOG_ERROR("Failed to create or reuse session");
             return createErrorResponse("Failed to create session", QHttpServerResponder::StatusCode::InternalServerError);
         }
+        LOG_DEBUG(QString("New Session created with ID: %1").arg(session->id().toString()));
 
         // Explicitly check if login event was created, and create it if missing
         if (m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
@@ -495,7 +496,7 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
                            .arg(session->id().toString()));
 
                 SessionEventModel* event = new SessionEventModel();
-                event->setId(QUuid::createUuid());
+                // event->setId(QUuid::createUuid());
                 event->setSessionId(session->id());
                 event->setEventType(EventTypes::SessionEventType::Login);
                 event->setEventTime(currentDateTime);
@@ -711,7 +712,7 @@ QHttpServerResponse SessionController::handleGetActiveSession(const QHttpServerR
             QString uniqueId = SystemInfo::getMachineUniqueId();
             // In a real app, you would look up the machine ID by unique ID
             // For this example, we'll just use a placeholder UUID
-            machineId = QUuid::createUuid();
+            // machineId = QUuid::createUuid();
         }
 
         auto session = m_repository->getActiveSessionForUser(userId, machineId);
