@@ -13,6 +13,17 @@ CREATE EXTENSION IF NOT EXISTS "btree_gist";
 -- Create archive schema if not exists
 CREATE SCHEMA IF NOT EXISTS archive;
 
+-- Custom immutable function for date ranges
+CREATE OR REPLACE FUNCTION immutable_daterange(
+    start_time TIMESTAMP,
+    end_time TIMESTAMP
+) RETURNS daterange
+AS $$
+BEGIN
+RETURN daterange(start_time::date, COALESCE(end_time::date, 'infinity'::date));
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 -- Check if event_type already exists before creating
 DO
 $$
@@ -60,9 +71,9 @@ CREATE TABLE IF NOT EXISTS users (
     verified BOOLEAN DEFAULT false NOT NULL,
     verification_code VARCHAR(100),
     status_id uuid,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid
     );
 
@@ -94,9 +105,9 @@ CREATE TABLE IF NOT EXISTS roles (
     code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id)
     );
 
@@ -106,9 +117,9 @@ CREATE TABLE IF NOT EXISTS disciplines (
     code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id)
     );
 
@@ -120,9 +131,9 @@ CREATE TABLE IF NOT EXISTS applications (
     app_hash VARCHAR(64),
     is_restricted BOOLEAN DEFAULT false NOT NULL,
     tracking_enabled BOOLEAN DEFAULT true NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     UNIQUE(app_name, app_path)
     );
@@ -132,9 +143,9 @@ CREATE TABLE IF NOT EXISTS tracked_applications_roles (
                                                           app_id uuid REFERENCES applications(id),
     role_id uuid REFERENCES roles(id),
     created_by uuid REFERENCES users(id),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (app_id, role_id)
     );
 
@@ -142,9 +153,9 @@ CREATE TABLE IF NOT EXISTS tracked_applications_disciplines (
                                                                 app_id uuid REFERENCES applications(id),
     discipline_id uuid REFERENCES disciplines(id),
     created_by uuid REFERENCES users(id),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (app_id, discipline_id)
     );
 
@@ -158,12 +169,12 @@ CREATE TABLE IF NOT EXISTS machines (
     cpu_info VARCHAR(512),
     gpu_info VARCHAR(512),
     ram_size_gb INTEGER,
-    last_known_ip INET,
-    last_seen_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    ip_address INET,
+    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     active BOOLEAN DEFAULT true NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     CONSTRAINT machine_unique_id_unique UNIQUE (machine_unique_id)
     );
@@ -174,9 +185,9 @@ CREATE TABLE IF NOT EXISTS user_role_disciplines (
     user_id uuid REFERENCES users(id) NOT NULL,
     role_id uuid REFERENCES roles(id) NOT NULL,
     discipline_id uuid REFERENCES disciplines(id) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     -- Enforce uniqueness of user-role-discipline combination
     UNIQUE(user_id, role_id, discipline_id)
@@ -187,24 +198,23 @@ CREATE TABLE IF NOT EXISTS sessions (
                                         id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id uuid REFERENCES users(id) NOT NULL,
     machine_id uuid REFERENCES machines(id),
-    login_time TIMESTAMPTZ NOT NULL,
-    logout_time TIMESTAMPTZ,
-    ip_address INET,
+    login_time TIMESTAMP NOT NULL,
+    logout_time TIMESTAMP,
     session_data JSONB DEFAULT '{}',
     continued_from_session UUID,
     continued_by_session UUID,
-    previous_session_end_time TIMESTAMP WITH TIME ZONE,
-                                            time_since_previous_session BIGINT DEFAULT 0,
-                                            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                                            created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ NOT NULL,
+    previous_session_end_time TIMESTAMP,
+    time_since_previous_session BIGINT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_by uuid REFERENCES users(id),
+    updated_at TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     CONSTRAINT session_time_check CHECK (logout_time IS NULL OR logout_time > login_time),
     CONSTRAINT no_overlapping_sessions EXCLUDE USING gist (
                                                               user_id WITH =,
                                                               machine_id WITH =,
-                                                              tstzrange(login_time, COALESCE(logout_time, 'infinity')) WITH &&
-                                            )
+                                                              immutable_daterange(login_time, logout_time) WITH &&
+                                                   )
     );
 
 -- Add self-references after table creation
@@ -220,11 +230,11 @@ ALTER TABLE sessions
 CREATE TABLE IF NOT EXISTS afk_periods (
                                            id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     session_id uuid REFERENCES sessions(id),
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     CONSTRAINT afk_time_check CHECK (end_time IS NULL OR end_time > start_time)
     );
@@ -239,11 +249,11 @@ CREATE TABLE activity_events (
                                  session_id uuid REFERENCES sessions(id),
                                  app_id uuid REFERENCES applications(id),
                                  event_type event_type NOT NULL,
-                                 event_time TIMESTAMPTZ NOT NULL,
+                                 event_time TIMESTAMP NOT NULL,
                                  event_data JSONB DEFAULT '{}',
-                                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                                  created_by uuid REFERENCES users(id),
-                                 updated_at TIMESTAMPTZ NOT NULL,
+                                 updated_at TIMESTAMP NOT NULL,
                                  updated_by uuid REFERENCES users(id)
 ) PARTITION BY RANGE (event_time);
 END IF;
@@ -255,10 +265,10 @@ CREATE TABLE system_metrics (
                                 cpu_usage NUMERIC(5,2) CHECK (cpu_usage >= 0 AND cpu_usage <= 100),
                                 gpu_usage NUMERIC(5,2) CHECK (gpu_usage >= 0 AND gpu_usage <= 100),
                                 memory_usage NUMERIC(5,2) CHECK (memory_usage >= 0 AND memory_usage <= 100),
-                                measurement_time TIMESTAMPTZ NOT NULL,
-                                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                                measurement_time TIMESTAMP NOT NULL,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                                 created_by uuid REFERENCES users(id),
-                                updated_at TIMESTAMPTZ NOT NULL,
+                                updated_at TIMESTAMP NOT NULL,
                                 updated_by uuid REFERENCES users(id)
 ) PARTITION BY RANGE (measurement_time);
 END IF;
@@ -268,13 +278,13 @@ CREATE TABLE app_usage (
                            id uuid DEFAULT gen_random_uuid(),
                            session_id uuid REFERENCES sessions(id),
                            app_id uuid REFERENCES applications(id),
-                           start_time TIMESTAMPTZ NOT NULL,
-                           end_time TIMESTAMPTZ,
+                           start_time TIMESTAMP NOT NULL,
+                           end_time TIMESTAMP,
                            is_active BOOLEAN DEFAULT true,
                            window_title TEXT,
-                           created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                            created_by uuid REFERENCES users(id),
-                           updated_at TIMESTAMPTZ NOT NULL,
+                           updated_at TIMESTAMP NOT NULL,
                            updated_by uuid REFERENCES users(id),
                            CONSTRAINT app_usage_time_check CHECK (end_time IS NULL OR end_time > start_time)
 ) PARTITION BY RANGE (start_time);
@@ -285,16 +295,16 @@ CREATE TABLE session_events (
                                 id uuid DEFAULT gen_random_uuid(),
                                 session_id uuid REFERENCES sessions(id),
                                 event_type session_event_type NOT NULL,
-                                event_time TIMESTAMPTZ NOT NULL,
+                                event_time TIMESTAMP NOT NULL,
                                 user_id uuid REFERENCES users(id),
                                 previous_user_id uuid REFERENCES users(id),
                                 machine_id uuid REFERENCES machines(id),
                                 terminal_session_id VARCHAR(50),
                                 is_remote BOOLEAN DEFAULT false,
                                 event_data JSONB DEFAULT '{}',
-                                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                                 created_by uuid REFERENCES users(id),
-                                updated_at TIMESTAMPTZ NOT NULL,
+                                updated_at TIMESTAMP NOT NULL,
                                 updated_by uuid REFERENCES users(id)
 ) PARTITION BY RANGE (event_time);
 END IF;
@@ -305,12 +315,12 @@ $$;
 CREATE TABLE IF NOT EXISTS maintenance_history (
                                                    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     task_name text NOT NULL,
-    start_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    end_time TIMESTAMPTZ,
+    start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    end_time TIMESTAMP,
     status text NOT NULL,
     error_message text,
     affected_partitions text[],
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT unique_task_execution UNIQUE (task_name, start_time)
     );
 
@@ -439,8 +449,8 @@ RETURNS TABLE (
     session_id UUID,
     user_id UUID,
     machine_id UUID,
-    login_time TIMESTAMP WITH TIME ZONE,
-    logout_time TIMESTAMP WITH TIME ZONE,
+    login_time TIMESTAMP,
+    logout_time TIMESTAMP,
     gap_seconds NUMERIC,
     is_current BOOLEAN
 ) AS
@@ -526,8 +536,8 @@ CREATE OR REPLACE FUNCTION get_session_chain_stats(p_session_id UUID)
 RETURNS TABLE (
     chain_id UUID,
     total_sessions INT,
-    first_login TIMESTAMP WITH TIME ZONE,
-    last_activity TIMESTAMP WITH TIME ZONE,
+    first_login TIMESTAMP,
+    last_activity TIMESTAMP,
     total_duration_seconds NUMERIC,
     total_gap_seconds NUMERIC,
     real_time_span_seconds NUMERIC,
@@ -599,7 +609,9 @@ CREATE INDEX idx_afk_periods_session_id ON afk_periods(session_id);
 END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_afk_periods_timerange') THEN
-CREATE INDEX idx_afk_periods_timerange ON afk_periods USING GIST (tstzrange(start_time, end_time));
+DROP INDEX IF EXISTS idx_afk_periods_timerange;
+CREATE INDEX idx_afk_periods_start_time ON afk_periods(start_time);
+CREATE INDEX idx_afk_periods_end_time ON afk_periods(end_time);
 END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_urd_user_id') THEN
@@ -816,7 +828,7 @@ IF NOT admin_exists THEN
         );
 END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM roles WHERE code = 'ADMIN') THEN
+IF NOT EXISTS (SELECT 1 FROM roles WHERE code = 'ADMIN') THEN
         INSERT INTO roles (
             code,
             name,
@@ -848,7 +860,7 @@ END IF;
         );
 END IF;
 END
-$;
+$$;
 
 -- Create future partitions
 SELECT create_future_partitions();
@@ -893,4 +905,26 @@ ALTER TABLE session_events
 DROP CONSTRAINT IF EXISTS session_events_session_id_fkey,
     ADD CONSTRAINT session_events_session_id_fkey
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE;
+
+-- Token storage table for persistent authentication
+CREATE TABLE IF NOT EXISTS auth_tokens (
+                                           token_id VARCHAR(64) PRIMARY KEY,   -- The token string (hashed if needed)
+    token_type VARCHAR(20) NOT NULL,    -- 'user', 'service', 'refresh', 'api'
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    token_data JSONB NOT NULL,          -- All token metadata
+    expires_at TIMESTAMP NOT NULL,      -- Expiration timestamp
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_by uuid REFERENCES users(id),
+    updated_at TIMESTAMP NOT NULL,
+    updated_by uuid REFERENCES users(id),
+    revoked BOOLEAN DEFAULT false,      -- For token revocation
+    revocation_reason VARCHAR(255),     -- Optional reason for revocation
+    device_info JSONB,                  -- Device information
+    last_used_at TIMESTAMP              -- Track when token was last used
+    );
+
+-- Indexes for token table
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_revoked ON auth_tokens(revoked) WHERE revoked = false;
 
