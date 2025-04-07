@@ -531,8 +531,8 @@ QHttpServerResponse SystemMetricsController::handleGetAverageMetrics(const qint6
                 }
             }
 
-            averageMetrics["start_time"] = earliestTime.toString(Qt::ISODate);
-            averageMetrics["end_time"] = latestTime.toString(Qt::ISODate);
+            averageMetrics["start_time"] = earliestTime.toUTC().toString();
+            averageMetrics["end_time"] = latestTime.toUTC().toString();
         }
 
         LOG_INFO(QString("Average metrics calculated from %1 samples for session %2").arg(count).arg(sessionId));
@@ -595,7 +595,7 @@ QHttpServerResponse SystemMetricsController::handleGetMetricsTimeSeries(const qi
             QJsonArray cpuSeries;
             for (const auto &metric : sessionMetrics) {
                 QJsonObject dataPoint;
-                dataPoint["time"] = metric->measurementTime().toString(Qt::ISODate);
+                dataPoint["time"] = metric->measurementTime().toUTC().toString();
                 dataPoint["value"] = metric->cpuUsage();
                 cpuSeries.append(dataPoint);
             }
@@ -606,7 +606,7 @@ QHttpServerResponse SystemMetricsController::handleGetMetricsTimeSeries(const qi
             QJsonArray gpuSeries;
             for (const auto &metric : sessionMetrics) {
                 QJsonObject dataPoint;
-                dataPoint["time"] = metric->measurementTime().toString(Qt::ISODate);
+                dataPoint["time"] = metric->measurementTime().toUTC().toString();
                 dataPoint["value"] = metric->gpuUsage();
                 gpuSeries.append(dataPoint);
             }
@@ -617,7 +617,7 @@ QHttpServerResponse SystemMetricsController::handleGetMetricsTimeSeries(const qi
             QJsonArray memorySeries;
             for (const auto &metric : sessionMetrics) {
                 QJsonObject dataPoint;
-                dataPoint["time"] = metric->measurementTime().toString(Qt::ISODate);
+                dataPoint["time"] = metric->measurementTime().toUTC().toString();
                 dataPoint["value"] = metric->memoryUsage();
                 memorySeries.append(dataPoint);
             }
@@ -643,14 +643,14 @@ QJsonObject SystemMetricsController::systemMetricsToJson(SystemMetricsModel *met
     json["cpu_usage"] = metrics->cpuUsage();
     json["gpu_usage"] = metrics->gpuUsage();
     json["memory_usage"] = metrics->memoryUsage();
-    json["measurement_time"] = metrics->measurementTime().toString(Qt::ISODate);
-    json["created_at"] = metrics->createdAt().toString(Qt::ISODate);
+    json["measurement_time"] = metrics->measurementTime().toUTC().toString();
+    json["created_at"] = metrics->createdAt().toUTC().toString();
 
     if (!metrics->createdBy().isNull()) {
         json["created_by"] = uuidToString(metrics->createdBy());
     }
 
-    json["updated_at"] = metrics->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = metrics->updatedAt().toUTC().toString();
 
     if (!metrics->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(metrics->updatedBy());

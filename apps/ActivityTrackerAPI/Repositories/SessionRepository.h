@@ -50,7 +50,6 @@ public:
         const QUuid& userId,
         const QUuid& machineId,
         const QDateTime& currentDateTime,
-        const QHostAddress& ipAddress,
         const QJsonObject& sessionData,
         bool isRemote = false,
         const QString& terminalSessionId = QString());

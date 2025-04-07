@@ -72,16 +72,16 @@ QMap<QString, QVariant> SessionEventRepository::prepareParamsForSave(SessionEven
     QMap<QString, QVariant> params;
     params["session_id"] = event->sessionId().toString(QUuid::WithoutBraces);
     params["event_type"] = eventTypeToString(event->eventType());
-    params["event_time"] = event->eventTime().toString(Qt::ISODate);
+    params["event_time"] = event->eventTime().toUTC();
     params["user_id"] = event->userId().isNull() ? QVariant(QVariant::Invalid) : event->userId().toString(QUuid::WithoutBraces);
     params["previous_user_id"] = event->previousUserId().isNull() ? QVariant(QVariant::Invalid) : event->previousUserId().toString(QUuid::WithoutBraces);
     params["machine_id"] = event->machineId().toString(QUuid::WithoutBraces);
     params["terminal_session_id"] = event->terminalSessionId();
     params["is_remote"] = event->isRemote() ? "true" : "false";
     params["event_data"] = QString::fromUtf8(QJsonDocument(event->eventData()).toJson());
-    params["created_at"] = event->createdAt().toString(Qt::ISODate);
+    params["created_at"] = event->createdAt().toUTC();
     params["created_by"] = event->createdBy().isNull() ? QVariant(QVariant::Invalid) : event->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = event->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = event->updatedAt().toUTC();
     params["updated_by"] = event->updatedBy().isNull() ? QVariant(QVariant::Invalid) : event->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -212,8 +212,8 @@ QList<QSharedPointer<SessionEventModel>> SessionEventRepository::getByTimeRange(
 
     QMap<QString, QVariant> params;
     params["session_id"] = sessionId.toString(QUuid::WithoutBraces);
-    params["start_time"] = startTime.toString(Qt::ISODate);
-    params["end_time"] = endTime.toString(Qt::ISODate);
+    params["start_time"] = startTime.toUTC();
+    params["end_time"] = endTime.toUTC();
 
     QString queryStr = "SELECT * FROM session_events WHERE session_id = :session_id AND event_time >= :start_time AND event_time <= :end_time ORDER BY event_time DESC";
 
@@ -388,8 +388,8 @@ QJsonObject SessionEventRepository::getSessionEventSummary(const QUuid &sessionI
                 QDateTime lastEvent = query.value("last_event").toDateTime();
 
                 if (firstEvent.isValid() && lastEvent.isValid()) {
-                    summary["first_event"] = firstEvent.toString(Qt::ISODate);
-                    summary["last_event"] = lastEvent.toString(Qt::ISODate);
+                    summary["first_event"] = firstEvent.toUTC().toString();
+                    summary["last_event"] = lastEvent.toUTC().toString();
                     summary["duration_seconds"] = firstEvent.secsTo(lastEvent);
                 }
             }

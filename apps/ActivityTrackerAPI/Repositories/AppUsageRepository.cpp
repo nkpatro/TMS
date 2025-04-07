@@ -71,13 +71,13 @@ QMap<QString, QVariant> AppUsageRepository::prepareParamsForSave(AppUsageModel* 
     QMap<QString, QVariant> params;
     params["session_id"] = appUsage->sessionId().toString(QUuid::WithoutBraces);
     params["app_id"] = appUsage->appId().toString(QUuid::WithoutBraces);
-    params["start_time"] = appUsage->startTime().toString(Qt::ISODate);
-    params["end_time"] = appUsage->endTime().isValid() ? appUsage->endTime().toString(Qt::ISODate) : QVariant(QVariant::Invalid);
+    params["start_time"] = appUsage->startTime().toUTC();
+    params["end_time"] = appUsage->endTime().isValid() ? appUsage->endTime().toUTC() : QVariant(QVariant::Invalid);
     params["is_active"] = appUsage->isActive() ? "true" : "false";
     params["window_title"] = appUsage->windowTitle();
-    params["created_at"] = appUsage->createdAt().toString(Qt::ISODate);
+    params["created_at"] = appUsage->createdAt().toUTC();
     params["created_by"] = appUsage->createdBy().isNull() ? QVariant(QVariant::Invalid) : appUsage->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = appUsage->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = appUsage->updatedAt().toUTC();
     params["updated_by"] = appUsage->updatedBy().isNull() ? QVariant(QVariant::Invalid) : appUsage->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -111,8 +111,8 @@ bool AppUsageRepository::endAppUsage(const QUuid &usageId, const QDateTime &endT
 
     QMap<QString, QVariant> params;
     params["id"] = usageId.toString(QUuid::WithoutBraces);
-    params["end_time"] = endTime.toString(Qt::ISODate);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["end_time"] = endTime.toUTC();
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "UPDATE app_usage SET "
@@ -324,7 +324,7 @@ QJsonObject AppUsageRepository::getAppUsageSummary(const QUuid &sessionId)
         QJsonObject activeApp;
         activeApp["id"] = currentApp->id().toString(QUuid::WithoutBraces);
         activeApp["app_id"] = currentApp->appId().toString(QUuid::WithoutBraces);
-        activeApp["start_time"] = currentApp->startTime().toString(Qt::ISODate);
+        activeApp["start_time"] = currentApp->startTime().toUTC().toString();
         activeApp["window_title"] = currentApp->windowTitle();
         activeApp["duration_seconds"] = currentApp->duration();
         summary["active_app"] = activeApp;

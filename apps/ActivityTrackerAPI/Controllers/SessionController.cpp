@@ -153,7 +153,7 @@ void SessionController::setupRoutes(QHttpServer &server)
 
     LOG_INFO("Setting up SessionController routes");
 
-    // Get all sessions
+    // Get all sessions (requires auth)
     server.route("/api/sessions", QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -162,7 +162,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Get session by ID
+    // Get session by ID (requires auth)
     server.route("/api/sessions/<arg>", QHttpServerRequest::Method::Get,
         [this](const qint64 id, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -171,7 +171,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Create a new session
+    // Create a new session (NO AUTH REQUIRED - service endpoint)
     server.route("/api/sessions", QHttpServerRequest::Method::Post,
         [this](const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -180,7 +180,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // End a session
+    // End a session (requires auth)
     server.route("/api/sessions/<arg>/end", QHttpServerRequest::Method::Post,
         [this](const qint64 id, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -189,7 +189,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Get active session for current user
+    // Get active session for current user (requires auth)
     server.route("/api/sessions/active", QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -198,7 +198,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Get sessions by user ID
+    // Get sessions by user ID (requires auth)
     server.route("/api/users/<arg>/sessions", QHttpServerRequest::Method::Get,
         [this](const qint64 userId, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -207,7 +207,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Get sessions by machine ID
+    // Get sessions by machine ID (requires auth)
     server.route("/api/machines/<arg>/sessions", QHttpServerRequest::Method::Get,
         [this](const qint64 machineId, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -216,7 +216,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Get activities for a session
+    // Get activities for a session (requires auth)
     server.route("/api/sessions/<arg>/activities", QHttpServerRequest::Method::Get,
         [this](const qint64 sessionId, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -225,7 +225,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Record activity for a session
+    // Record activity for a session (requires auth)
     server.route("/api/sessions/<arg>/activities", QHttpServerRequest::Method::Post,
         [this](const qint64 sessionId, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -234,7 +234,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Start AFK period
+    // Start AFK period (requires auth)
     server.route("/api/sessions/<arg>/afk/start", QHttpServerRequest::Method::Post,
         [this](const qint64 sessionId, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -243,7 +243,7 @@ void SessionController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // End AFK period
+    // End AFK period (requires auth)
     server.route("/api/sessions/<arg>/afk/end", QHttpServerRequest::Method::Post,
         [this](const qint64 sessionId, const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -378,13 +378,6 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
 
     LOG_DEBUG("Processing CREATE session request");
 
-    // Check authentication using base class method
-    QJsonObject userData;
-    if (!isUserAuthorized(request, userData)) {
-        LOG_WARNING("Unauthorized request");
-        return Http::Response::unauthorized("Unauthorized");
-    }
-
     try {
         bool ok;
         QJsonObject json = extractJsonFromRequest(request, ok);
@@ -393,19 +386,11 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             return Http::Response::badRequest("Invalid JSON data");
         }
 
-        // Extract username from the request data or user data
+        // Extract username from the request data
         QString username;
         if (json.contains("username") && !json["username"].toString().isEmpty()) {
             username = json["username"].toString();
             LOG_DEBUG(QString("Username found in JSON: %1").arg(username));
-        }
-        else if (userData.contains("username") && !userData["username"].toString().isEmpty()) {
-            username = userData["username"].toString();
-            LOG_DEBUG(QString("Username found in userData: %1").arg(username));
-        }
-        else if (userData.contains("name") && !userData["name"].toString().isEmpty()) {
-            username = userData["name"].toString();
-            LOG_DEBUG(QString("Using name as username: %1").arg(username));
         }
         else if (json.contains("user_id") && !json["user_id"].toString().isEmpty()) {
             username = json["user_id"].toString(); // Sometimes user_id field contains the username
@@ -450,15 +435,6 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
         // Get current date and time
         QDateTime currentDateTime = QDateTime::currentDateTimeUtc();
 
-        // Process IP address
-        QHostAddress ipAddress;
-        if (json.contains("ip_address") && !json["ip_address"].toString().isEmpty()) {
-            ipAddress = QHostAddress(json["ip_address"].toString());
-        } else {
-            // Try to get from request
-            ipAddress = QHostAddress(request.remoteAddress().toString());
-        }
-
         // Extract session data if provided
         QJsonObject sessionData;
         if (json.contains("session_data") && json["session_data"].isObject()) {
@@ -477,7 +453,6 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             user->id(),
             machineId,
             currentDateTime,
-            ipAddress,
             sessionData,
             isRemote,
             terminalSessionId
@@ -487,6 +462,7 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
             LOG_ERROR("Failed to create or reuse session");
             return createErrorResponse("Failed to create session", QHttpServerResponder::StatusCode::InternalServerError);
         }
+
         LOG_DEBUG(QString("New Session created with ID: %1").arg(session->id().toString()));
 
         // Explicitly check if login event was created, and create it if missing
@@ -496,7 +472,6 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
                            .arg(session->id().toString()));
 
                 SessionEventModel* event = new SessionEventModel();
-                // event->setId(QUuid::createUuid());
                 event->setSessionId(session->id());
                 event->setEventType(EventTypes::SessionEventType::Login);
                 event->setEventTime(currentDateTime);
@@ -524,7 +499,6 @@ QHttpServerResponse SessionController::handleCreateSession(const QHttpServerRequ
                 if (!eventSuccess) {
                     LOG_ERROR(QString("Still failed to create login event for session: %1")
                              .arg(session->id().toString()));
-                    // Continue anyway as we at least have the session
                 } else {
                     LOG_INFO(QString("Fallback login event created for session: %1")
                             .arg(session->id().toString()));
@@ -1187,10 +1161,10 @@ QHttpServerResponse SessionController::handleGetSessionStats(const qint64 sessio
         // Basic session info
         stats["session_id"] = uuidToString(session->id());
         stats["user_id"] = uuidToString(session->userId());
-        stats["login_time"] = session->loginTime().toString(Qt::ISODate);
+        stats["login_time"] = session->loginTime().toUTC().toString();
 
         if (session->logoutTime().isValid()) {
-            stats["logout_time"] = session->logoutTime().toString(Qt::ISODate);
+            stats["logout_time"] = session->logoutTime().toUTC().toString();
             stats["active"] = false;
         } else {
             stats["active"] = true;
@@ -1328,22 +1302,21 @@ QJsonObject SessionController::sessionToJson(SessionModel *session) const
     json["session_id"] = uuidToString(session->id());
     json["user_id"] = uuidToString(session->userId());
 
-    json["login_time"] = session->loginTime().toString(Qt::ISODate);
+    json["login_time"] = session->loginTime().toUTC().toString();
 
     if (session->logoutTime().isValid()) {
-        json["logout_time"] = session->logoutTime().toString(Qt::ISODate);
+        json["logout_time"] = session->logoutTime().toUTC().toString();
     }
 
     json["machine_id"] = uuidToString(session->machineId());
-    json["ip_address"] = session->ipAddress().toString();
     json["session_data"] = session->sessionData();
-    json["created_at"] = session->createdAt().toString(Qt::ISODate);
+    json["created_at"] = session->createdAt().toUTC().toString();
 
     if (!session->createdBy().isNull()) {
         json["created_by"] = uuidToString(session->createdBy());
     }
 
-    json["updated_at"] = session->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = session->updatedAt().toUTC().toString();
 
     if (!session->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(session->updatedBy());
@@ -1359,7 +1332,7 @@ QJsonObject SessionController::sessionToJson(SessionModel *session) const
     }
 
     if (session->previousSessionEndTime().isValid()) {
-        json["previous_session_end_time"] = session->previousSessionEndTime().toString(Qt::ISODate);
+        json["previous_session_end_time"] = session->previousSessionEndTime().toUTC().toString();
     }
 
     json["time_since_previous_session"] = session->timeSincePreviousSession();
@@ -1371,25 +1344,25 @@ QJsonObject SessionController::sessionToJson(SessionModel *session) const
 
 QJsonObject SessionController::afkPeriodToJson(AfkPeriodModel *afkPeriod) const
 {
-    QJsonObject json;
+    QJsonObject  json;
     json["afk_id"] = uuidToString(afkPeriod->id());
     json["session_id"] = uuidToString(afkPeriod->sessionId());
 
-    json["start_time"] = afkPeriod->startTime().toString(Qt::ISODate);
+    json["start_time"] = afkPeriod->startTime().toUTC().toString();
 
     if (afkPeriod->endTime().isValid()) {
-        json["end_time"] = afkPeriod->endTime().toString(Qt::ISODate);
+        json["end_time"] = afkPeriod->endTime().toUTC().toString();
     }
 
     json["is_active"] = afkPeriod->isActive();
     json["duration_seconds"] = afkPeriod->duration();
-    json["created_at"] = afkPeriod->createdAt().toString(Qt::ISODate);
+    json["created_at"] = afkPeriod->createdAt().toUTC().toString();
 
     if (!afkPeriod->createdBy().isNull()) {
         json["created_by"] = uuidToString(afkPeriod->createdBy());
     }
 
-    json["updated_at"] = afkPeriod->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = afkPeriod->updatedAt().toUTC().toString();
 
     if (!afkPeriod->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(afkPeriod->updatedBy());
@@ -1436,15 +1409,15 @@ QJsonObject SessionController::activityEventToJson(ActivityEventModel *event) co
         break;
     }
 
-    json["event_time"] = event->eventTime().toString(Qt::ISODate);
+    json["event_time"] = event->eventTime().toUTC().toString();
     json["event_data"] = event->eventData();
-    json["created_at"] = event->createdAt().toString(Qt::ISODate);
+    json["created_at"] = event->createdAt().toUTC().toString();
 
     if (!event->createdBy().isNull()) {
         json["created_by"] = uuidToString(event->createdBy());
     }
 
-    json["updated_at"] = event->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = event->updatedAt().toUTC().toString();
 
     if (!event->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(event->updatedBy());
@@ -1515,7 +1488,7 @@ bool SessionController::endAllActiveSessions(const QUuid &userId, const QUuid &m
     QMap<QString, QVariant> params;
     params["user_id"] = userId.toString(QUuid::WithoutBraces);
     params["machine_id"] = machineId.toString(QUuid::WithoutBraces);
-    params["logout_time"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["logout_time"] = QDateTime::currentDateTimeUtc().toUTC().toString();
 
     QString query =
         "UPDATE sessions SET "
@@ -1679,7 +1652,6 @@ QHttpServerResponse SessionController::handleDayChange(const QUuid& userId, cons
         newSession->setUserId(userId);
         newSession->setMachineId(machineId);
         newSession->setLoginTime(startOfDay);
-        newSession->setIpAddress(activeSession->ipAddress());
         newSession->setSessionData(activeSession->sessionData());
         newSession->setContinuedFromSession(activeSession->id());
         newSession->setPreviousSessionEndTime(endOfDay);

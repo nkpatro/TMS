@@ -61,7 +61,7 @@ QHttpServerResponse ServerStatusController::handlePingRequest(const QHttpServerR
     QJsonObject response;
     response["status"] = "ok";
     response["message"] = "pong";
-    response["timestamp"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    response["timestamp"] = QDateTime::currentDateTimeUtc().toUTC().toString();
 
     return createSuccessResponse(response);
 }
@@ -90,7 +90,7 @@ QHttpServerResponse ServerStatusController::handleHealthCheck(const QHttpServerR
     // Create response
     QJsonObject response;
     response["status"] = "ok";
-    response["server_time"] = now.toString(Qt::ISODate);
+    response["server_time"] = now.toUTC().toString();
     response["uptime_seconds"] = uptimeSeconds;
     response["system_info"] = systemInfo;
     response["version"] = m_version;
@@ -111,7 +111,7 @@ QHttpServerResponse ServerStatusController::handleVersionInfo(const QHttpServerR
     response["version"] = m_version;
     response["build_date"] = m_buildDate;
     response["qt_version"] = qVersion();
-    response["server_time"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    response["server_time"] = QDateTime::currentDateTimeUtc().toUTC().toString();
 
     return createSuccessResponse(response);
 }

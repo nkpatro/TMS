@@ -87,8 +87,8 @@ QMap<QString, QVariant> UserRoleDisciplineRepository::prepareParamsForSave(UserR
     params["user_id"] = model->userId().toString(QUuid::WithoutBraces);
     params["role_id"] = model->roleId().toString(QUuid::WithoutBraces);
     params["discipline_id"] = model->disciplineId().toString(QUuid::WithoutBraces);
-    params["created_at"] = model->createdAt().toString(Qt::ISODate);
-    params["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    params["created_at"] = model->createdAt().toUTC();
+    params["updated_at"] = model->updatedAt().toUTC();
 
     // Handle nullable fields
     params["created_by"] = model->createdBy().isNull() ? QVariant(QVariant::Invalid) : model->createdBy().toString(QUuid::WithoutBraces);
@@ -104,7 +104,7 @@ QMap<QString, QVariant> UserRoleDisciplineRepository::prepareParamsForUpdate(Use
     params["user_id"] = model->userId().toString(QUuid::WithoutBraces);
     params["role_id"] = model->roleId().toString(QUuid::WithoutBraces);
     params["discipline_id"] = model->disciplineId().toString(QUuid::WithoutBraces);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     // Handle nullable fields
     params["updated_by"] = model->updatedBy().isNull() ? QVariant(QVariant::Invalid) : model->updatedBy().toString(QUuid::WithoutBraces);

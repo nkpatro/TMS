@@ -78,19 +78,6 @@ void SessionModel::setMachineId(const QUuid &machineId)
     }
 }
 
-QHostAddress SessionModel::ipAddress() const
-{
-    return m_ipAddress;
-}
-
-void SessionModel::setIpAddress(const QHostAddress &ipAddress)
-{
-    if (m_ipAddress != ipAddress) {
-        m_ipAddress = ipAddress;
-        emit ipAddressChanged(m_ipAddress);
-    }
-}
-
 QJsonObject SessionModel::sessionData() const
 {
     return m_sessionData;
@@ -224,17 +211,16 @@ QString SessionModel::debugInfo() const
     QString info = QString("SessionModel [ID: %1]\n").arg(m_id.toString());
     info += QString("  User ID: %1\n").arg(m_userId.toString());
     info += QString("  Machine ID: %1\n").arg(m_machineId.toString());
-    info += QString("  Login Time: %1\n").arg(m_loginTime.isValid() ? m_loginTime.toString(Qt::ISODate) : "INVALID");
-    info += QString("  Logout Time: %1\n").arg(m_logoutTime.isValid() ? m_logoutTime.toString(Qt::ISODate) : "NULL");
-    info += QString("  IP Address: %1\n").arg(m_ipAddress.toString());
-    info += QString("  Created At: %1\n").arg(m_createdAt.isValid() ? m_createdAt.toString(Qt::ISODate) : "INVALID");
+    info += QString("  Login Time: %1\n").arg(m_loginTime.isValid() ? m_loginTime.toUTC().toString() : "INVALID");
+    info += QString("  Logout Time: %1\n").arg(m_logoutTime.isValid() ? m_logoutTime.toUTC().toString() : "NULL");
+    info += QString("  Created At: %1\n").arg(m_createdAt.isValid() ? m_createdAt.toUTC().toString() : "INVALID");
     info += QString("  Created By: %1\n").arg(m_createdBy.toString());
-    info += QString("  Updated At: %1\n").arg(m_updatedAt.isValid() ? m_updatedAt.toString(Qt::ISODate) : "INVALID");
+    info += QString("  Updated At: %1\n").arg(m_updatedAt.isValid() ? m_updatedAt.toUTC().toString() : "INVALID");
     info += QString("  Updated By: %1\n").arg(m_updatedBy.toString());
     info += QString("  Session Data: %1\n").arg(QString::fromUtf8(QJsonDocument(m_sessionData).toJson()));
     info += QString("  Continued From: %1\n").arg(m_continuedFromSession.toString());
     info += QString("  Continued By: %1\n").arg(m_continuedBySession.toString());
-    info += QString("  Previous End Time: %1\n").arg(m_previousSessionEndTime.isValid() ? m_previousSessionEndTime.toString(Qt::ISODate) : "NULL");
+    info += QString("  Previous End Time: %1\n").arg(m_previousSessionEndTime.isValid() ? m_previousSessionEndTime.toUTC().toString() : "NULL");
     info += QString("  Time Since Previous: %1 seconds").arg(m_timeSincePreviousSession);
     return info;
 }

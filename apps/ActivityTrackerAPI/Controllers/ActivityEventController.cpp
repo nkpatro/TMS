@@ -541,7 +541,7 @@ QHttpServerResponse ActivityEventController::handleCreateEvent(const QHttpServer
             QDateTime eventTime = QDateTime::fromString(json["event_time"].toString(), Qt::ISODate);
             if (eventTime.isValid()) {
                 event->setEventTime(eventTime);
-                LOG_DEBUG(QString("Setting event time: %1").arg(eventTime.toString(Qt::ISODate)));
+                LOG_DEBUG(QString("Setting event time: %1").arg(eventTime.toUTC().toString()));
             } else {
                 event->setEventTime(QDateTime::currentDateTimeUtc());
                 LOG_WARNING("Invalid event time format, using current time");
@@ -549,7 +549,7 @@ QHttpServerResponse ActivityEventController::handleCreateEvent(const QHttpServer
         } else {
             event->setEventTime(QDateTime::currentDateTimeUtc());
             LOG_DEBUG(QString("No event time specified, using current time: %1")
-                     .arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)));
+                     .arg(QDateTime::currentDateTimeUtc().toUTC().toString()));
         }
 
         // Set event data if provided
@@ -584,7 +584,7 @@ QHttpServerResponse ActivityEventController::handleCreateEvent(const QHttpServer
         // Add additional context to the response
         response["success"] = true;
         response["message"] = "Activity event created successfully";
-        response["timestamp"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        response["timestamp"] = QDateTime::currentDateTimeUtc().toUTC().toString();
 
         LOG_INFO(QString("Activity event created successfully: %1 (session: %2, type: %3)")
                 .arg(event->id().toString(),
@@ -849,15 +849,15 @@ QJsonObject ActivityEventController::activityEventToJson(ActivityEventModel *eve
     // Convert event type enum to string
     json["event_type"] = eventTypeToString(event->eventType());
 
-    json["event_time"] = event->eventTime().toString(Qt::ISODate);
+    json["event_time"] = event->eventTime().toUTC().toString();
     json["event_data"] = event->eventData();
-    json["created_at"] = event->createdAt().toString(Qt::ISODate);
+    json["created_at"] = event->createdAt().toUTC().toString();
 
     if (!event->createdBy().isNull()) {
         json["created_by"] = uuidToString(event->createdBy());
     }
 
-    json["updated_at"] = event->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = event->updatedAt().toUTC().toString();
 
     if (!event->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(event->updatedBy());

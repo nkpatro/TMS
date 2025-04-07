@@ -72,9 +72,9 @@ QMap<QString, QVariant> UserRepository::prepareParamsForSave(UserModel* user)
     params["verification_code"] = user->verificationCode();
     params["status_id"] = user->statusId().isNull() ? QVariant(QVariant::Invalid) : user->statusId().toString(QUuid::WithoutBraces);
     params["created_by"] = user->createdBy().isNull() ? QVariant(QVariant::Invalid) : user->createdBy().toString(QUuid::WithoutBraces);
-    params["created_at"] = user->createdAt().toString(Qt::ISODate);
+    params["created_at"] = user->createdAt().toUTC();
     params["updated_by"] = user->updatedBy().isNull() ? QVariant(QVariant::Invalid) : user->updatedBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = user->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = user->updatedAt().toUTC();
 
     return params;
 }
@@ -90,7 +90,7 @@ QMap<QString, QVariant> UserRepository::prepareParamsForUpdate(UserModel* user)
     params["verified"] = user->verified() ? "true" : "false";
     params["verification_code"] = user->verificationCode();
     params["status_id"] = user->statusId().isNull() ? QVariant(QVariant::Invalid) : user->statusId().toString(QUuid::WithoutBraces);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
     params["updated_by"] = user->updatedBy().isNull() ? QVariant(QVariant::Invalid) : user->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -229,7 +229,7 @@ bool UserRepository::setUserActive(const QUuid &id, bool active)
     QMap<QString, QVariant> params;
     params["id"] = id.toString(QUuid::WithoutBraces);
     params["active"] = active ? "true" : "false";
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "UPDATE users SET "
@@ -261,7 +261,7 @@ bool UserRepository::setUserVerified(const QUuid &id, bool verified)
     QMap<QString, QVariant> params;
     params["id"] = id.toString(QUuid::WithoutBraces);
     params["verified"] = verified ? "true" : "false";
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "UPDATE users SET "
@@ -327,7 +327,7 @@ bool UserRepository::updatePassword(const QUuid &id, const QString &newPassword)
     QMap<QString, QVariant> params;
     params["id"] = id.toString(QUuid::WithoutBraces);
     params["password"] = hashPassword(newPassword);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "UPDATE users SET "

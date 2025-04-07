@@ -80,7 +80,7 @@ void SessionEventController::setupRoutes(QHttpServer &server)
 
     LOG_INFO("Setting up SessionEventController routes");
 
-    // Get all events
+    // Get all events (requires auth)
     server.route("/api/session-events", QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest &request) {
             logRequestReceived(request);
@@ -89,11 +89,38 @@ void SessionEventController::setupRoutes(QHttpServer &server)
             return response;
         });
 
-    // Get event by ID
+    // Get event by ID (requires auth)
     server.route("/api/session-events/<arg>", QHttpServerRequest::Method::Get,
         [this](const qint64 id, const QHttpServerRequest &request) {
             logRequestReceived(request);
             auto response = handleGetEventById(id, request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // Create event (NO AUTH REQUIRED - service endpoint)
+    server.route("/api/session-events", QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleCreateEvent(request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // Create event for session (NO AUTH REQUIRED - service endpoint)
+    server.route("/api/sessions/<arg>/events", QHttpServerRequest::Method::Post,
+        [this](const qint64 sessionId, const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleCreateEventForSession(sessionId, request);
+            logRequestCompleted(request, response.statusCode());
+            return response;
+        });
+
+    // Update event (requires auth)
+    server.route("/api/session-events/<arg>", QHttpServerRequest::Method::Put,
+        [this](const qint64 id, const QHttpServerRequest &request) {
+            logRequestReceived(request);
+            auto response = handleUpdateEvent(id, request);
             logRequestCompleted(request, response.statusCode());
             return response;
         });
@@ -139,33 +166,6 @@ void SessionEventController::setupRoutes(QHttpServer &server)
         [this](const QString &machineId, const QHttpServerRequest &request) {
             logRequestReceived(request);
             auto response = handleGetEventsByMachineId(machineId, request);
-            logRequestCompleted(request, response.statusCode());
-            return response;
-        });
-
-    // Create event
-    server.route("/api/session-events", QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest &request) {
-            logRequestReceived(request);
-            auto response = handleCreateEvent(request);
-            logRequestCompleted(request, response.statusCode());
-            return response;
-        });
-
-    // Create event for session
-    server.route("/api/sessions/<arg>/events", QHttpServerRequest::Method::Post,
-        [this](const qint64 sessionId, const QHttpServerRequest &request) {
-            logRequestReceived(request);
-            auto response = handleCreateEventForSession(sessionId, request);
-            logRequestCompleted(request, response.statusCode());
-            return response;
-        });
-
-    // Update event
-    server.route("/api/session-events/<arg>", QHttpServerRequest::Method::Put,
-        [this](const qint64 id, const QHttpServerRequest &request) {
-            logRequestReceived(request);
-            auto response = handleUpdateEvent(id, request);
             logRequestCompleted(request, response.statusCode());
             return response;
         });
@@ -506,13 +506,6 @@ QHttpServerResponse SessionEventController::handleCreateEvent(const QHttpServerR
 
     LOG_DEBUG("Processing CREATE session event request");
 
-    // Check authentication
-    QJsonObject userData;
-    if (!isUserAuthorized(request, userData)) {
-        LOG_WARNING("Unauthorized request");
-        return Http::Response::unauthorized("Unauthorized");
-    }
-
     try {
         // Parse and validate request JSON
         bool ok;
@@ -561,7 +554,7 @@ QHttpServerResponse SessionEventController::handleCreateEvent(const QHttpServerR
             QDateTime eventTime = QDateTime::fromString(json["event_time"].toString(), Qt::ISODate);
             if (eventTime.isValid()) {
                 event->setEventTime(eventTime);
-                LOG_DEBUG(QString("Setting event time: %1").arg(eventTime.toString(Qt::ISODate)));
+                LOG_DEBUG(QString("Setting event time: %1").arg(eventTime.toUTC().toString()));
             } else {
                 event->setEventTime(QDateTime::currentDateTimeUtc());
                 LOG_WARNING("Invalid event time format, using current time");
@@ -569,7 +562,7 @@ QHttpServerResponse SessionEventController::handleCreateEvent(const QHttpServerR
         } else {
             event->setEventTime(QDateTime::currentDateTimeUtc());
             LOG_DEBUG(QString("No event time specified, using current time: %1")
-                     .arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)));
+                     .arg(QDateTime::currentDateTimeUtc().toUTC().toString()));
         }
 
         // Set user ID if provided
@@ -622,7 +615,15 @@ QHttpServerResponse SessionEventController::handleCreateEvent(const QHttpServerR
         }
 
         // Set metadata properties
-        QUuid userId = QUuid(userData["id"].toString());
+        QUuid userId;
+        if (json.contains("user_id") && !json["user_id"].toString().isEmpty()) {
+            userId = QUuid(json["user_id"].toString());
+        } else {
+            // Create a system-generated ID if not provided
+            userId = QUuid::createUuid();
+            LOG_DEBUG("No user ID provided for metadata, using generated ID");
+        }
+
         QDateTime currentTime = QDateTime::currentDateTimeUtc();
 
         event->setCreatedBy(userId);
@@ -631,7 +632,7 @@ QHttpServerResponse SessionEventController::handleCreateEvent(const QHttpServerR
         event->setUpdatedAt(currentTime);
 
         LOG_DEBUG(QString("Setting metadata: createdBy=%1, timestamp=%2")
-                 .arg(userId.toString(), currentTime.toString(Qt::ISODate)));
+                 .arg(userId.toString(), currentTime.toUTC().toString()));
 
         // Save the event to the database
         LOG_DEBUG(QString("Attempting to save session event: sessionId=%1, eventType=%2")
@@ -651,7 +652,7 @@ QHttpServerResponse SessionEventController::handleCreateEvent(const QHttpServerR
         // Add additional context to the response
         response["success"] = true;
         response["message"] = "Session event created successfully";
-        response["timestamp"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        response["timestamp"] = QDateTime::currentDateTimeUtc().toUTC().toString();
 
         LOG_INFO(QString("Session event created successfully: %1 (session: %2, type: %3)")
                 .arg(event->id().toString(),
@@ -678,13 +679,6 @@ QHttpServerResponse SessionEventController::handleCreateEventForSession(const qi
     }
 
     LOG_DEBUG(QString("Processing CREATE session event for session ID: %1").arg(sessionId));
-
-    // Check authentication
-    QJsonObject userData;
-    if (!isUserAuthorized(request, userData)) {
-        LOG_WARNING("Unauthorized request");
-        return Http::Response::unauthorized("Unauthorized");
-    }
 
     try {
         bool ok;
@@ -745,10 +739,20 @@ QHttpServerResponse SessionEventController::handleCreateEventForSession(const qi
             event->setEventData(json["event_data"].toObject());
         }
 
-        // Set metadata
-        QUuid userId = QUuid(userData["id"].toString());
+        // Set metadata using user_id from request if available
+        QUuid userId;
+        if (json.contains("user_id") && !json["user_id"].toString().isEmpty()) {
+            userId = QUuid(json["user_id"].toString());
+        } else {
+            // Create a system-generated ID if not provided
+            userId = QUuid::createUuid();
+            LOG_DEBUG("No user ID provided for metadata, using generated ID");
+        }
+
         event->setCreatedBy(userId);
         event->setUpdatedBy(userId);
+        event->setCreatedAt(QDateTime::currentDateTimeUtc());
+        event->setUpdatedAt(QDateTime::currentDateTimeUtc());
 
         bool success = m_repository->save(event);
 
@@ -982,11 +986,11 @@ QHttpServerResponse SessionEventController::handleGetEventStats(const qint64 ses
         summary["remote_disconnect_count"] = remoteDisconnectCount;
 
         if (!firstEventTime.isNull()) {
-            summary["first_event_time"] = firstEventTime.toString(Qt::ISODate);
+            summary["first_event_time"] = firstEventTime.toUTC().toString();
         }
 
         if (!lastEventTime.isNull()) {
-            summary["last_event_time"] = lastEventTime.toString(Qt::ISODate);
+            summary["last_event_time"] = lastEventTime.toUTC().toString();
         }
 
         if (!firstEventTime.isNull() && !lastEventTime.isNull()) {
@@ -1017,7 +1021,7 @@ QJsonObject SessionEventController::sessionEventToJson(SessionEventModel *event)
     json["event_id"] = uuidToString(event->id());
     json["session_id"] = uuidToString(event->sessionId());
     json["event_type"] = eventTypeToString(event->eventType());
-    json["event_time"] = event->eventTime().toString(Qt::ISODate);
+    json["event_time"] = event->eventTime().toUTC().toString();
 
     if (!event->userId().isNull()) {
         json["user_id"] = uuidToString(event->userId());
@@ -1031,13 +1035,13 @@ QJsonObject SessionEventController::sessionEventToJson(SessionEventModel *event)
     json["terminal_session_id"] = event->terminalSessionId();
     json["is_remote"] = event->isRemote();
     json["event_data"] = event->eventData();
-    json["created_at"] = event->createdAt().toString(Qt::ISODate);
+    json["created_at"] = event->createdAt().toUTC().toString();
 
     if (!event->createdBy().isNull()) {
         json["created_by"] = uuidToString(event->createdBy());
     }
 
-    json["updated_at"] = event->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = event->updatedAt().toUTC().toString();
 
     if (!event->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(event->updatedBy());

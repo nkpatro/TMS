@@ -17,7 +17,6 @@ class SessionModel : public QObject
     Q_PROPERTY(QDateTime loginTime READ loginTime WRITE setLoginTime NOTIFY loginTimeChanged)
     Q_PROPERTY(QDateTime logoutTime READ logoutTime WRITE setLogoutTime NOTIFY logoutTimeChanged)
     Q_PROPERTY(QUuid machineId READ machineId WRITE setMachineId NOTIFY machineIdChanged)
-    Q_PROPERTY(QHostAddress ipAddress READ ipAddress WRITE setIpAddress NOTIFY ipAddressChanged)
     Q_PROPERTY(QJsonObject sessionData READ sessionData WRITE setSessionData NOTIFY sessionDataChanged)
     Q_PROPERTY(QDateTime createdAt READ createdAt WRITE setCreatedAt NOTIFY createdAtChanged)
     Q_PROPERTY(QUuid createdBy READ createdBy WRITE setCreatedBy NOTIFY createdByChanged)
@@ -48,9 +47,6 @@ public:
 
     QUuid machineId() const;
     void setMachineId(const QUuid &machineId);
-
-    QHostAddress ipAddress() const;
-    void setIpAddress(const QHostAddress &ipAddress);
 
     QJsonObject sessionData() const;
     void setSessionData(const QJsonObject &sessionData);
@@ -90,7 +86,6 @@ signals:
     void loginTimeChanged(const QDateTime &loginTime);
     void logoutTimeChanged(const QDateTime &logoutTime);
     void machineIdChanged(const QUuid &machineId);
-    void ipAddressChanged(const QHostAddress &ipAddress);
     void sessionDataChanged(const QJsonObject &sessionData);
     void createdAtChanged(const QDateTime &createdAt);
     void createdByChanged(const QUuid &createdBy);
@@ -107,7 +102,6 @@ private:
     QDateTime m_loginTime;
     QDateTime m_logoutTime;
     QUuid m_machineId;
-    QHostAddress m_ipAddress;
     QJsonObject m_sessionData;
     QDateTime m_createdAt;
     QUuid m_createdBy;

@@ -75,12 +75,12 @@ QString SessionRepository::getModelId(SessionModel* model) const
 QString SessionRepository::buildSaveQuery()
 {
     return "INSERT INTO sessions "
-           "(user_id, login_time, logout_time, machine_id, ip_address, "
+           "(user_id, login_time, logout_time, machine_id, "
            "session_data, created_at, created_by, updated_at, updated_by, continued_from_session, "
            "continued_by_session, previous_session_end_time, time_since_previous_session) "
            "VALUES "
            "(:user_id, :login_time, :logout_time, :machine_id, "
-           ":ip_address, :session_data, :created_at, :created_by, :updated_at, :updated_by, "
+           ":session_data, :created_at, :created_by, :updated_at, :updated_by, "
            ":continued_from_session, :continued_by_session, :previous_session_end_time, :time_since_previous_session) "
            "RETURNING id";
 }
@@ -92,7 +92,6 @@ QString SessionRepository::buildUpdateQuery()
            "login_time = :login_time, "
            "logout_time = :logout_time, "
            "machine_id = :machine_id, "
-           "ip_address = :ip_address, "
            "session_data = :session_data, "
            "updated_at = :updated_at, "
            "updated_by = :updated_by, "
@@ -125,11 +124,10 @@ QMap<QString, QVariant> SessionRepository::prepareParamsForSave(SessionModel* se
     // For standard non-NULL fields
     params["user_id"] = session->userId().toString(QUuid::WithoutBraces);
     params["machine_id"] = session->machineId().toString(QUuid::WithoutBraces);
-    params["ip_address"] = session->ipAddress().toString();
     params["session_data"] = QString::fromUtf8(QJsonDocument(session->sessionData()).toJson());
-    params["login_time"] = session->loginTime().toString(Qt::ISODate);
-    params["created_at"] = session->createdAt().toString(Qt::ISODate);
-    params["updated_at"] = session->updatedAt().toString(Qt::ISODate);
+    params["login_time"] = session->loginTime().toUTC();
+    params["created_at"] = session->createdAt().toUTC();
+    params["updated_at"] = session->updatedAt().toUTC();
     params["time_since_previous_session"] = QString::number(session->timeSincePreviousSession());
 
     // For nullable UUID fields - use QVariant::Invalid for NULL
@@ -139,8 +137,8 @@ QMap<QString, QVariant> SessionRepository::prepareParamsForSave(SessionModel* se
     params["continued_by_session"] = session->continuedBySession().isNull() ? QVariant(QVariant::Invalid) : session->continuedBySession().toString(QUuid::WithoutBraces);
 
     // For nullable timestamp fields
-    params["logout_time"] = session->logoutTime().isValid() ? session->logoutTime().toString(Qt::ISODate) : QVariant(QVariant::Invalid);
-    params["previous_session_end_time"] = session->previousSessionEndTime().isValid() ? session->previousSessionEndTime().toString(Qt::ISODate) : QVariant(QVariant::Invalid);
+    params["logout_time"] = session->logoutTime().isValid() ? session->logoutTime().toUTC() : QVariant(QVariant::Invalid);
+    params["previous_session_end_time"] = session->previousSessionEndTime().isValid() ? session->previousSessionEndTime().toUTC() : QVariant(QVariant::Invalid);
 
     return params;
 }
@@ -279,8 +277,8 @@ QSharedPointer<SessionModel> SessionRepository::getActiveSessionForUser(const QU
             .arg((*result)->id().toString())
             .arg((*result)->userId().toString())
             .arg((*result)->machineId().toString())
-            .arg((*result)->loginTime().toString(Qt::ISODate))
-            .arg((*result)->logoutTime().isValid() ? (*result)->logoutTime().toString(Qt::ISODate) : "NULL"));
+            .arg((*result)->loginTime().toUTC().toString())
+            .arg((*result)->logoutTime().isValid() ? (*result)->logoutTime().toUTC().toString() : "NULL"));
 
         LOG_INFO(QString("Active session found for user ID: %1 and machine ID: %2")
                  .arg(userId.toString(), machineId.toString()));
@@ -425,7 +423,7 @@ bool SessionRepository::continueSession(const QUuid &previousSessionId, const QU
         QMap<QString, QVariant> params1;
         params1["id"] = previousSessionId.toString(QUuid::WithoutBraces);
         params1["continued_by_session"] = newSessionId.toString(QUuid::WithoutBraces);
-        params1["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        params1["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
         QString query1 =
             "UPDATE sessions SET "
@@ -449,9 +447,9 @@ bool SessionRepository::continueSession(const QUuid &previousSessionId, const QU
         QMap<QString, QVariant> params2;
         params2["id"] = newSessionId.toString(QUuid::WithoutBraces);
         params2["continued_from_session"] = previousSessionId.toString(QUuid::WithoutBraces);
-        params2["previous_session_end_time"] = previousSession->logoutTime().toString(Qt::ISODate);
+        params2["previous_session_end_time"] = previousSession->logoutTime().toUTC();
         params2["time_since_previous_session"] = QString::number(previousSession->logoutTime().secsTo(newSession->loginTime()));
-        params2["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        params2["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
         QString query2 =
             "UPDATE sessions SET "
@@ -614,8 +612,8 @@ QJsonObject SessionRepository::getSessionChainStats(const QUuid &id)
             QJsonObject data;
             data["chain_id"] = chainStats->chainId;
             data["total_sessions"] = chainStats->totalSessions;
-            data["first_login"] = chainStats->firstLogin.toString(Qt::ISODate);
-            data["last_activity"] = chainStats->lastActivity.toString(Qt::ISODate);
+            data["first_login"] = chainStats->firstLogin.toUTC().toString();
+            data["last_activity"] = chainStats->lastActivity.toUTC().toString();
             data["total_duration_seconds"] = chainStats->totalDurationSeconds;
             data["total_gap_seconds"] = chainStats->totalGapSeconds;
             data["real_time_span_seconds"] = chainStats->realTimeSpanSeconds;
@@ -656,8 +654,8 @@ QJsonObject SessionRepository::getUserSessionStats(const QUuid &userId, const QD
 {
     LOG_DEBUG(QString("Getting user session stats for user %1 from %2 to %3")
               .arg(userId.toString())
-              .arg(startDate.toString(Qt::ISODate))
-              .arg(endDate.toString(Qt::ISODate)));
+              .arg(startDate.toUTC().toString())
+              .arg(endDate.toUTC().toString()));
 
     QJsonObject stats;
 
@@ -668,8 +666,8 @@ QJsonObject SessionRepository::getUserSessionStats(const QUuid &userId, const QD
 
     QMap<QString, QVariant> params;
     params["user_id"] = userId.toString(QUuid::WithoutBraces);
-    params["start_date"] = startDate.toString(Qt::ISODate);
-    params["end_date"] = endDate.toString(Qt::ISODate);
+    params["start_date"] = startDate.toUTC();
+    params["end_date"] = endDate.toUTC();
 
     QString query =
         "SELECT "
@@ -704,8 +702,8 @@ QJsonObject SessionRepository::getUserSessionStats(const QUuid &userId, const QD
             QJsonObject data;
             data["total_sessions"] = userStats->totalSessions;
             data["total_seconds"] = userStats->totalSeconds;
-            data["first_login"] = userStats->firstLogin.toString(Qt::ISODate);
-            data["last_activity"] = userStats->lastActivity.toString(Qt::ISODate);
+            data["first_login"] = userStats->firstLogin.toUTC().toString();
+            data["last_activity"] = userStats->lastActivity.toUTC().toString();
             data["unique_machines"] = userStats->uniqueMachines;
 
             userStats->setSessionData(data);
@@ -748,8 +746,8 @@ QJsonObject SessionRepository::getUserSessionStats(const QUuid &userId, const QD
     // Get AFK stats
     QMap<QString, QVariant> afkParams;
     afkParams["user_id"] = userId.toString(QUuid::WithoutBraces);
-    afkParams["start_date"] = startDate.toString(Qt::ISODate);
-    afkParams["end_date"] = endDate.toString(Qt::ISODate);
+    afkParams["start_date"] = startDate.toUTC();
+    afkParams["end_date"] = endDate.toUTC();
 
     QString afkQuery =
         "SELECT "
@@ -819,7 +817,7 @@ QSharedPointer<SessionModel> SessionRepository::getSessionForDay(const QUuid& us
     LOG_DEBUG(QString("Getting session for user ID: %1, machine ID: %2, date: %3")
         .arg(userId.toString())
         .arg(machineId.toString())
-        .arg(date.toString(Qt::ISODate)));
+        .arg(date.toString()));
 
     if (!ensureInitialized()) {
         return nullptr;
@@ -828,8 +826,8 @@ QSharedPointer<SessionModel> SessionRepository::getSessionForDay(const QUuid& us
     QMap<QString, QVariant> params;
     params["user_id"] = userId.toString(QUuid::WithoutBraces);
     params["machine_id"] = machineId.toString(QUuid::WithoutBraces);
-    params["start_of_day"] = QDateTime(date, QTime(0, 0, 0), Qt::UTC).toString(Qt::ISODate);
-    params["end_of_day"] = QDateTime(date, QTime(23, 59, 59, 999), Qt::UTC).toString(Qt::ISODate);
+    params["start_of_day"] = QDateTime(date, QTime(0, 0, 0), Qt::UTC);
+    params["end_of_day"] = QDateTime(date, QTime(23, 59, 59, 999), Qt::UTC);
 
     QString query =
         "SELECT * FROM sessions WHERE user_id = :user_id AND machine_id = :machine_id "
@@ -842,14 +840,14 @@ QSharedPointer<SessionModel> SessionRepository::getSessionForDay(const QUuid& us
         LOG_INFO(QString("Found session for user ID: %1, machine ID: %2, date: %3 - Session ID: %4")
             .arg(userId.toString())
             .arg(machineId.toString())
-            .arg(date.toString(Qt::ISODate))
+            .arg(date.toString())
             .arg(result->id().toString()));
     }
     else {
         LOG_INFO(QString("No session found for user ID: %1, machine ID: %2, date: %3")
             .arg(userId.toString())
             .arg(machineId.toString())
-            .arg(date.toString(Qt::ISODate)));
+            .arg(date.toString()));
     }
 
     return result;
@@ -859,7 +857,6 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
     const QUuid& userId,
     const QUuid& machineId,
     const QDateTime& currentDateTime,
-    const QHostAddress& ipAddress,
     const QJsonObject& sessionData,
     bool isRemote,
     const QString& terminalSessionId)
@@ -884,7 +881,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
 
             LOG_INFO(QString("Found active session: %1 with login time: %2")
                 .arg(activeSession->id().toString())
-                .arg(activeSession->loginTime().toString(Qt::ISODate)));
+                .arg(activeSession->loginTime().toUTC().toString()));
 
             // Use safe method to end the session
             SessionEventRepository* eventRepo = nullptr;
@@ -917,8 +914,8 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
         QMap<QString, QVariant> params;
         params["user_id"] = userId.toString(QUuid::WithoutBraces);
         params["machine_id"] = machineId.toString(QUuid::WithoutBraces);
-        params["start_of_day"] = QDateTime(currentDate, QTime(0, 0, 0), Qt::UTC).toString(Qt::ISODate);
-        params["end_of_day"] = QDateTime(currentDate, QTime(23, 59, 59, 999), Qt::UTC).toString(Qt::ISODate);
+        params["start_of_day"] = QDateTime(currentDate, QTime(0, 0, 0), Qt::UTC).toUTC();
+        params["end_of_day"] = QDateTime(currentDate, QTime(23, 59, 59, 999), Qt::UTC).toUTC();
 
         QString query =
             "SELECT * FROM sessions WHERE user_id = :user_id AND machine_id = :machine_id "
@@ -995,7 +992,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     QJsonObject eventData;
                     eventData["reason"] = "session_reopened";
                     eventData["auto_generated"] = true;
-                    eventData["original_login_time"] = todaySession->loginTime().toString(Qt::ISODate);
+                    eventData["original_login_time"] = todaySession->loginTime().toUTC().toString();
                     loginEvent->setEventData(eventData);
 
                     // Set metadata
@@ -1073,7 +1070,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     // Add metadata explaining this is a relogin during the session
                     QJsonObject eventData;
                     eventData["reason"] = "relogin_during_session";
-                    eventData["original_login_time"] = todaySession->loginTime().toString(Qt::ISODate);
+                    eventData["original_login_time"] = todaySession->loginTime().toUTC().toString();
                     loginEvent->setEventData(eventData);
 
                     // Set metadata
@@ -1103,7 +1100,6 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
             newSession->setUserId(userId);
             newSession->setLoginTime(currentDateTime);
             newSession->setMachineId(machineId);
-            newSession->setIpAddress(ipAddress);
             newSession->setSessionData(sessionData);
 
             // Set session continuity information if there was a previous session
@@ -1119,7 +1115,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                     QMap<QString, QVariant> contParams;
                     contParams["id"] = lastActiveSessionId.toString(QUuid::WithoutBraces);
                     contParams["continued_by"] = newSession->id().toString(QUuid::WithoutBraces);
-                    contParams["updated_at"] = currentDateTime.toString(Qt::ISODate);
+                    contParams["updated_at"] = currentDateTime.toUTC();
 
                     QString contQuery =
                         "UPDATE sessions SET "
@@ -1148,7 +1144,7 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
                 && newSession->loginTime().isValid()) {
 
                 LOG_DEBUG(QString("New session validation passed: login_time=%1")
-                    .arg(newSession->loginTime().toString(Qt::ISODate)));
+                    .arg(newSession->loginTime().toUTC().toString()));
 
                 // Save the session
                 if (!save(newSession)) {
@@ -1252,14 +1248,14 @@ bool SessionRepository::safeEndSession(const QUuid &sessionId, const QDateTime &
     if (useTransaction) {
         hasExistingLogout = hasLogoutEvent(sessionId, logoutTime, eventRepository);
         LOG_DEBUG(QString("Session %1 has existing logout event at time %2: %3")
-                 .arg(sessionId.toString(), logoutTime.toString(Qt::ISODate), hasExistingLogout ? "yes" : "no"));
+                 .arg(sessionId.toString(), logoutTime.toUTC().toString(), hasExistingLogout ? "yes" : "no"));
     }
 
     // Use direct SQL update to avoid potential issues with model state
     QMap<QString, QVariant> params;
     params["id"] = sessionId.toString(QUuid::WithoutBraces);
-    params["logout_time"] = logoutTime.toString(Qt::ISODate);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["logout_time"] = logoutTime.toUTC();
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "UPDATE sessions SET "
@@ -1367,7 +1363,7 @@ bool SessionRepository::safeReopenSession(const QUuid &sessionId, const QDateTim
 
         if (!hasMatchingLogoutEvent) {
             LOG_INFO(QString("Creating missing logout event for session %1 at time %2")
-                     .arg(sessionId.toString(), session->logoutTime().toString(Qt::ISODate)));
+                     .arg(sessionId.toString(), session->logoutTime().toUTC().toString()));
 
             SessionEventModel* logoutEvent = new SessionEventModel();
             logoutEvent->setId(QUuid::createUuid());
@@ -1404,7 +1400,7 @@ bool SessionRepository::safeReopenSession(const QUuid &sessionId, const QDateTim
     // Use direct SQL update to avoid potential issues with model state
     QMap<QString, QVariant> params;
     params["id"] = sessionId.toString(QUuid::WithoutBraces);
-    params["updated_at"] = updateTime.toString(Qt::ISODate);
+    params["updated_at"] = updateTime.toUTC();
 
     QString query =
         "UPDATE sessions SET "
@@ -1440,7 +1436,7 @@ bool SessionRepository::safeReopenSession(const QUuid &sessionId, const QDateTim
             QJsonObject eventData;
             eventData["reason"] = "session_reopened";
             eventData["auto_generated"] = true;
-            eventData["original_login_time"] = session->loginTime().toString(Qt::ISODate);
+            eventData["original_login_time"] = session->loginTime().toUTC().toString();
             event->setEventData(eventData);
 
             // Set event metadata
@@ -1497,14 +1493,14 @@ bool SessionRepository::createSessionLoginEvent(
     }
 
     LOG_DEBUG(QString("Creating login event for session: %1 at time: %2")
-              .arg(sessionId.toString(), loginTime.toString(Qt::ISODate)));
+              .arg(sessionId.toString(), loginTime.toUTC().toString()));
 
     // Check for existing login events at this time to avoid duplicates
     bool hasExistingLoginEvent = hasLoginEvent(sessionId, loginTime, eventRepository);
 
     if (hasExistingLoginEvent) {
         LOG_INFO(QString("Login event already exists for session %1 at time %2, skipping creation")
-                .arg(sessionId.toString(), loginTime.toString(Qt::ISODate)));
+                .arg(sessionId.toString(), loginTime.toUTC().toString()));
         return true; // Already exists, no need to create
     }
 
@@ -1513,7 +1509,7 @@ bool SessionRepository::createSessionLoginEvent(
     LOG_INFO(QString("Session ID: %1").arg(sessionId.toString()));
     LOG_INFO(QString("User ID: %1").arg(userId.toString()));
     LOG_INFO(QString("Machine ID: %1").arg(machineId.toString()));
-    LOG_INFO(QString("Login Time: %1").arg(loginTime.toString(Qt::ISODate)));
+    LOG_INFO(QString("Login Time: %1").arg(loginTime.toUTC().toString()));
     LOG_INFO(QString("Is Remote: %1").arg(isRemote ? "true" : "false"));
     LOG_INFO(QString("Terminal Session ID: %1").arg(terminalSessionId.isEmpty() ? "none" : terminalSessionId));
 
@@ -1610,7 +1606,7 @@ bool SessionRepository::hasLoginEvent(const QUuid &sessionId, const QDateTime &l
     LOG_DEBUG(QString("Checking for login events for session: %1%2")
               .arg(sessionId.toString())
               .arg(loginTime.isValid() ?
-                   QString(" at specific time: %1").arg(loginTime.toString(Qt::ISODate)) :
+                   QString(" at specific time: %1").arg(loginTime.toUTC().toString()) :
                    " at any time"));
 
     // Get all events for this session
@@ -1644,7 +1640,7 @@ bool SessionRepository::hasLoginEvent(const QUuid &sessionId, const QDateTime &l
               .arg(sessionId.toString())
               .arg(hasMatchingLoginEvent ? "" : "no ")
               .arg(loginTime.isValid() ?
-                   QString(" around time %1").arg(loginTime.toString(Qt::ISODate)) :
+                   QString(" around time %1").arg(loginTime.toUTC().toString()) :
                    ""));
 
     return hasMatchingLoginEvent;
@@ -1663,7 +1659,7 @@ bool SessionRepository::hasLogoutEvent(const QUuid &sessionId, const QDateTime &
     }
 
     LOG_DEBUG(QString("Checking for logout events for session: %1 at time: %2")
-              .arg(sessionId.toString(), logoutTime.toString(Qt::ISODate)));
+              .arg(sessionId.toString(), logoutTime.toUTC().toString()));
 
     // Query the events repository directly for events with this session ID
     QList<QSharedPointer<SessionEventModel>> events = eventRepository->getBySessionId(sessionId);
@@ -1694,7 +1690,7 @@ bool SessionRepository::hasLogoutEvent(const QUuid &sessionId, const QDateTime &
     LOG_DEBUG(QString("Session %1 has %2logout event %3")
               .arg(sessionId.toString())
               .arg(hasMatchingLogoutEvent ? "" : "no ")
-              .arg(logoutTime.isValid() ? QString("at time %1").arg(logoutTime.toString(Qt::ISODate)) : ""));
+              .arg(logoutTime.isValid() ? QString("at time %1").arg(logoutTime.toUTC().toString()) : ""));
 
     return hasMatchingLogoutEvent;
 }
@@ -1726,7 +1722,7 @@ bool SessionRepository::verifyLoginLogoutPairs(const QUuid &sessionId, SessionEv
                 // Found a login while already logged in - this is unpaired
                 unpaired++;
                 LOG_WARNING(QString("Unpaired login event found at %1 for session %2")
-                          .arg(event->eventTime().toString(Qt::ISODate), sessionId.toString()));
+                          .arg(event->eventTime().toUTC().toString(), sessionId.toString()));
             }
             currentlyLoggedIn = true;
         }
@@ -1735,7 +1731,7 @@ bool SessionRepository::verifyLoginLogoutPairs(const QUuid &sessionId, SessionEv
                 // Found a logout without being logged in - this is unpaired
                 unpaired++;
                 LOG_WARNING(QString("Unpaired logout event found at %1 for session %2")
-                          .arg(event->eventTime().toString(Qt::ISODate), sessionId.toString()));
+                          .arg(event->eventTime().toUTC().toString(), sessionId.toString()));
             }
             currentlyLoggedIn = false;
         }

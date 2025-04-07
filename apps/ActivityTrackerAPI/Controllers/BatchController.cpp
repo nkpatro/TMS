@@ -222,7 +222,7 @@ QHttpServerResponse BatchController::handleProcessBatch(const QHttpServerRequest
         // Initialize results object
         QJsonObject results;
         results["session_id"] = sessionId.toString(QUuid::WithoutBraces);
-        results["processing_time"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        results["processing_time"] = QDateTime::currentDateTimeUtc().toUTC().toString();
         results["success"] = true;
         results["processed_counts"] = QJsonObject();
 
@@ -317,7 +317,7 @@ QHttpServerResponse BatchController::handleProcessSessionBatch(const qint64 sess
         // Initialize results object
         QJsonObject results;
         results["session_id"] = sessionUuid.toString(QUuid::WithoutBraces);
-        results["processing_time"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        results["processing_time"] = QDateTime::currentDateTimeUtc().toUTC().toString();
         results["success"] = true;
         results["processed_counts"] = QJsonObject();
 

@@ -188,8 +188,8 @@ QString AuthFramework::generateToken(const QJsonObject& userData, int expiryHour
 
     // Create token data with expiry
     QJsonObject tokenData = userData;
-    tokenData["expires_at"] = expiryTime.toString(Qt::ISODate);
-    tokenData["created_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    tokenData["expires_at"] = expiryTime.toUTC().toString();
+    tokenData["created_at"] = QDateTime::currentDateTimeUtc().toUTC().toString();
     tokenData["token_id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     tokenData["token_type"] = "user";
 
@@ -223,7 +223,7 @@ QString AuthFramework::generateToken(const QJsonObject& userData, int expiryHour
     }
 
     LOG_INFO(QString("Token generated for user: %1 (expires: %2)")
-            .arg(userData["name"].toString(), expiryTime.toString(Qt::ISODate)));
+            .arg(userData["name"].toString(), expiryTime.toUTC().toString()));
 
     return token;
 }
@@ -253,8 +253,8 @@ QString AuthFramework::generateServiceToken(
     tokenData["username"] = username;
     tokenData["computer_name"] = computerName;
     tokenData["machine_id"] = machineId;
-    tokenData["created_at"] = now.toString(Qt::ISODate);
-    tokenData["expires_at"] = expiryTime.toString(Qt::ISODate);
+    tokenData["created_at"] = now.toUTC().toString();
+    tokenData["expires_at"] = expiryTime.toUTC().toString();
     tokenData["token_type"] = "service";
     tokenData["token_id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
@@ -321,8 +321,8 @@ QString AuthFramework::generateApiKey(
     keyData["service_id"] = serviceId;
     keyData["description"] = description;
     keyData["created_by"] = createdBy.toString(QUuid::WithoutBraces);
-    keyData["created_at"] = now.toString(Qt::ISODate);
-    keyData["expires_at"] = expiryTime.toString(Qt::ISODate);
+    keyData["created_at"] = now.toUTC().toString();
+    keyData["expires_at"] = expiryTime.toUTC().toString();
     keyData["token_type"] = "api";
     keyData["key_id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
@@ -352,7 +352,7 @@ QString AuthFramework::generateApiKey(
     }
 
     LOG_INFO(QString("API key generated for service: %1 (expires: %2)")
-            .arg(serviceId, expiryTime.toString(Qt::ISODate)));
+            .arg(serviceId, expiryTime.toUTC().toString()));
 
     return key;
 }
@@ -371,8 +371,8 @@ QString AuthFramework::generateRefreshToken(const QJsonObject& userData, int exp
 
     // Create token data
     QJsonObject tokenData = userData;
-    tokenData["expires_at"] = expiryTime.toString(Qt::ISODate);
-    tokenData["created_at"] = now.toString(Qt::ISODate);
+    tokenData["expires_at"] = expiryTime.toUTC().toString();
+    tokenData["created_at"] = now.toUTC().toString();
     tokenData["token_id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     tokenData["token_type"] = "refresh";
     tokenData["is_refresh_token"] = true;
@@ -408,7 +408,7 @@ QString AuthFramework::generateRefreshToken(const QJsonObject& userData, int exp
     }
 
     LOG_INFO(QString("Refresh token generated for user: %1 (expires: %2)")
-            .arg(userData["name"].toString(), expiryTime.toString(Qt::ISODate)));
+            .arg(userData["name"].toString(), expiryTime.toUTC().toString()));
 
     return token;
 }
@@ -776,8 +776,8 @@ QJsonObject AuthFramework::userToJson(UserModel* user) const {
     json["photo"] = user->photo();
     json["active"] = user->active();
     json["verified"] = user->verified();
-    json["created_at"] = user->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = user->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = user->createdAt().toUTC().toString();
+    json["updated_at"] = user->updatedAt().toUTC().toString();
 
     if (!user->statusId().isNull()) {
         json["status_id"] = user->statusId().toString(QUuid::WithoutBraces);

@@ -60,11 +60,11 @@ QMap<QString, QVariant> AfkPeriodRepository::prepareParamsForSave(AfkPeriodModel
 {
     QMap<QString, QVariant> params;
     params["session_id"] = afkPeriod->sessionId().toString(QUuid::WithoutBraces);
-    params["start_time"] = afkPeriod->startTime().toString(Qt::ISODate);
-    params["end_time"] = afkPeriod->endTime().isValid() ? afkPeriod->endTime().toString(Qt::ISODate) : QVariant(QVariant::Invalid);
-    params["created_at"] = afkPeriod->createdAt().toString(Qt::ISODate);
+    params["start_time"] = afkPeriod->startTime().toUTC();
+    params["end_time"] = afkPeriod->endTime().isValid() ? afkPeriod->endTime().toUTC() : QVariant(QVariant::Invalid);
+    params["created_at"] = afkPeriod->createdAt().toUTC();
     params["created_by"] = afkPeriod->createdBy().isNull() ? QVariant(QVariant::Invalid) : afkPeriod->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = afkPeriod->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = afkPeriod->updatedAt().toUTC();
     params["updated_by"] = afkPeriod->updatedBy().isNull() ? QVariant(QVariant::Invalid) : afkPeriod->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -178,7 +178,7 @@ QSharedPointer<AfkPeriodModel> AfkPeriodRepository::getLastAfkPeriod(const QUuid
 bool AfkPeriodRepository::endAfkPeriod(const QUuid &afkId, const QDateTime &endTime)
 {
     LOG_DEBUG(QString("Ending AFK period: %1 at %2")
-             .arg(afkId.toString(), endTime.toString(Qt::ISODate)));
+             .arg(afkId.toString(), endTime.toUTC().toString()));
 
     if (!ensureInitialized()) {
         return false;
@@ -186,8 +186,8 @@ bool AfkPeriodRepository::endAfkPeriod(const QUuid &afkId, const QDateTime &endT
 
     QMap<QString, QVariant> params;
     params["afk_id"] = afkId.toString(QUuid::WithoutBraces);
-    params["end_time"] = endTime.toString(Qt::ISODate);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["end_time"] = endTime.toUTC();
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "UPDATE afk_periods SET "

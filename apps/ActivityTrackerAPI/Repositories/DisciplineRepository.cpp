@@ -76,9 +76,9 @@ QMap<QString, QVariant> DisciplineRepository::prepareParamsForSave(DisciplineMod
     params["code"] = discipline->code();
     params["name"] = discipline->name();
     params["description"] = discipline->description();
-    params["created_at"] = discipline->createdAt().toString(Qt::ISODate);
+    params["created_at"] = discipline->createdAt().toUTC();
     params["created_by"] = discipline->createdBy().isNull() ? QVariant(QVariant::Invalid) : discipline->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = discipline->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = discipline->updatedAt().toUTC();
     params["updated_by"] = discipline->updatedBy().isNull() ? QVariant(QVariant::Invalid) : discipline->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -91,7 +91,7 @@ QMap<QString, QVariant> DisciplineRepository::prepareParamsForUpdate(DisciplineM
     params["code"] = discipline->code();
     params["name"] = discipline->name();
     params["description"] = discipline->description();
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
     params["updated_by"] = discipline->updatedBy().isNull() ? QVariant(QVariant::Invalid) : discipline->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -312,7 +312,7 @@ QJsonObject DisciplineRepository::getDisciplineStats(const QUuid &id)
             data["active_users"] = statsResult->activeUsers;
 
             if (statsResult->lastUsed.isValid()) {
-                data["last_used"] = statsResult->lastUsed.toString(Qt::ISODate);
+                data["last_used"] = statsResult->lastUsed.toUTC().toString();
             } else {
                 data["last_used"] = QJsonValue::Null;
             }

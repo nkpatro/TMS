@@ -968,13 +968,13 @@ QJsonObject ApplicationController::applicationToJson(ApplicationModel *applicati
     json["app_hash"] = application->appHash();
     json["is_restricted"] = application->isRestricted();
     json["tracking_enabled"] = application->trackingEnabled();
-    json["created_at"] = application->createdAt().toString(Qt::ISODate);
+    json["created_at"] = application->createdAt().toUTC().toString();
 
     if (!application->createdBy().isNull()) {
         json["created_by"] = uuidToString(application->createdBy());
     }
 
-    json["updated_at"] = application->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = application->updatedAt().toUTC().toString();
 
     if (!application->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(application->updatedBy());

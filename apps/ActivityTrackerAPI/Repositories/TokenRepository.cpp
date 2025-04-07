@@ -121,13 +121,13 @@ QMap<QString, QVariant> TokenRepository::prepareParamsForSave(TokenModel* token)
     params["token_type"] = token->tokenType();
     params["user_id"] = token->userId().toString(QUuid::WithoutBraces);
     params["token_data"] = jsonToString(token->tokenData());
-    params["expires_at"] = token->expiresAt().toString(Qt::ISODate);
-    params["created_at"] = token->createdAt().toString(Qt::ISODate);
+    params["expires_at"] = token->expiresAt().toUTC();
+    params["created_at"] = token->createdAt().toUTC();
     params["created_by"] = token->createdBy().isNull() ? QVariant(QVariant::String) : token->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = token->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = token->updatedAt().toUTC();
     params["updated_by"] = token->updatedBy().isNull() ? QVariant(QVariant::String) : token->updatedBy().toString(QUuid::WithoutBraces);
     params["device_info"] = jsonToString(token->deviceInfo());
-    params["last_used_at"] = token->lastUsedAt().toString(Qt::ISODate);
+    params["last_used_at"] = token->lastUsedAt().toUTC();
 
     // Log the parameter details for debugging
     LOG_DEBUG(QString("Prepared save parameters for token: %1").arg(token->tokenId()));
@@ -368,7 +368,7 @@ bool TokenRepository::revokeAllUserTokens(const QUuid& userId, const QString& re
     QMap<QString, QVariant> params;
     params["user_id"] = userId.toString(QUuid::WithoutBraces);
     params["revocation_reason"] = reason.isEmpty() ? "User logout" : reason;
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
     params["updated_by"] = QVariant(QVariant::String); // Optional, can be set if known
 
     QString query = buildRevokeAllUserTokensQuery();
@@ -457,8 +457,8 @@ bool TokenRepository::updateTokenLastUsed(const QString& token)
 
     QMap<QString, QVariant> params;
     params["token_id"] = token;
-    params["last_used_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["last_used_at"] = QDateTime::currentDateTimeUtc().toUTC();
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query = buildUpdateLastUsedQuery();
 

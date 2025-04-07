@@ -28,11 +28,11 @@ QString MachineRepository::buildSaveQuery()
 {
     return "INSERT INTO machines "
            "(name, machine_unique_id, mac_address, operating_system, cpu_info, "
-           "gpu_info, ram_size_gb, last_known_ip, last_seen_at, active, "
+           "gpu_info, ram_size_gb, ip_address, last_seen_at, active, "
            "created_at, created_by, updated_at, updated_by) "
            "VALUES "
            "(:name, :machine_unique_id, :mac_address, :operating_system, :cpu_info, "
-           ":gpu_info, :ram_size_gb, :last_known_ip, :last_seen_at, :active::boolean, "
+           ":gpu_info, :ram_size_gb, :ipAddress, :last_seen_at, :active::boolean, "
            ":created_at, :created_by, :updated_at, :updated_by) "
            "RETURNING id";
 }
@@ -47,7 +47,7 @@ QString MachineRepository::buildUpdateQuery()
            "cpu_info = :cpu_info, "
            "gpu_info = :gpu_info, "
            "ram_size_gb = :ram_size_gb, "
-           "last_known_ip = :last_known_ip, "
+           "ip_address = :ipAddress, "
            "last_seen_at = :last_seen_at, "
            "active = :active::boolean, "
            "updated_at = :updated_at, "
@@ -93,20 +93,20 @@ QMap<QString, QVariant> MachineRepository::prepareParamsForSave(MachineModel* ma
     params["cpu_info"] = machine->cpuInfo();
     params["gpu_info"] = machine->gpuInfo();
     params["ram_size_gb"] = machine->ramSizeGB();
-    params["last_known_ip"] = machine->lastKnownIp();
+    params["ipAddress"] = machine->ipAddress();
     params["active"] = machine->active() ? "true" : "false";
 
     // Nullable field
     params["last_seen_at"] = machine->lastSeenAt().isValid() ?
-                             machine->lastSeenAt().toString(Qt::ISODate) :
+                             machine->lastSeenAt().toUTC() :
                              QVariant(QVariant::Invalid);
 
     // Timestamps and audit fields
-    params["created_at"] = machine->createdAt().toString(Qt::ISODate);
+    params["created_at"] = machine->createdAt().toUTC();
     params["created_by"] = machine->createdBy().isNull() ?
                          QVariant(QVariant::Invalid) :
                          machine->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = machine->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = machine->updatedAt().toUTC();
     params["updated_by"] = machine->updatedBy().isNull() ?
                          QVariant(QVariant::Invalid) :
                          machine->updatedBy().toString(QUuid::WithoutBraces);
@@ -265,8 +265,8 @@ bool MachineRepository::updateLastSeen(const QUuid& id, const QDateTime& timesta
 
     QMap<QString, QVariant> params;
     params["id"] = id.toString(QUuid::WithoutBraces);
-    params["last_seen_at"] = timestamp.toString(Qt::ISODate);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["last_seen_at"] = timestamp.toUTC();
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "UPDATE machines SET "

@@ -749,22 +749,22 @@ QJsonObject AppUsageController::appUsageToJson(AppUsageModel *appUsage) const
     json["usage_id"] = uuidToString(appUsage->id());
     json["session_id"] = uuidToString(appUsage->sessionId());
     json["app_id"] = uuidToString(appUsage->appId());
-    json["start_time"] = appUsage->startTime().toString(Qt::ISODate);
+    json["start_time"] = appUsage->startTime().toUTC().toString();
 
     if (appUsage->endTime().isValid()) {
-        json["end_time"] = appUsage->endTime().toString(Qt::ISODate);
+        json["end_time"] = appUsage->endTime().toUTC().toString();
     }
 
     json["is_active"] = appUsage->isActive();
     json["window_title"] = appUsage->windowTitle();
     json["duration_seconds"] = appUsage->duration();
-    json["created_at"] = appUsage->createdAt().toString(Qt::ISODate);
+    json["created_at"] = appUsage->createdAt().toUTC().toString();
 
     if (!appUsage->createdBy().isNull()) {
         json["created_by"] = uuidToString(appUsage->createdBy());
     }
 
-    json["updated_at"] = appUsage->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = appUsage->updatedAt().toUTC().toString();
 
     if (!appUsage->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(appUsage->updatedBy());

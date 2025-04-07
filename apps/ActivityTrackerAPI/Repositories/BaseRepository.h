@@ -516,7 +516,7 @@ public:
                 paramValue = "'" + it.value().toString() + "'";
                 LOG_DEBUG(QString("  %1 (String) = %2").arg(it.key(), paramValue));
             } else if (it.value().type() == QVariant::DateTime) {
-                paramValue = "'" + it.value().toDateTime().toString(Qt::ISODate) + "'";
+                paramValue = "'" + it.value().toDateTime().toUTC().toString() + "'";
                 LOG_DEBUG(QString("  %1 (DateTime) = %2").arg(it.key(), paramValue));
             } else if (it.value().isNull()) {
                 paramValue = "NULL";

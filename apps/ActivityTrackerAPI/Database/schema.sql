@@ -51,9 +51,9 @@ CREATE TABLE IF NOT EXISTS users (
     verified BOOLEAN DEFAULT false NOT NULL,
     verification_code VARCHAR(100),
     status_id uuid,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid
     );
 
@@ -85,9 +85,9 @@ CREATE TABLE IF NOT EXISTS roles (
     code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id)
     );
 
@@ -97,9 +97,9 @@ CREATE TABLE IF NOT EXISTS disciplines (
     code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id)
     );
 
@@ -111,9 +111,9 @@ CREATE TABLE IF NOT EXISTS applications (
     app_hash VARCHAR(64),
     is_restricted BOOLEAN DEFAULT false NOT NULL,
     tracking_enabled BOOLEAN DEFAULT true NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     UNIQUE(app_name, app_path)
     );
@@ -123,9 +123,9 @@ CREATE TABLE IF NOT EXISTS tracked_applications_roles (
                                                           app_id uuid REFERENCES applications(id),
     role_id uuid REFERENCES roles(id),
     created_by uuid REFERENCES users(id),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (app_id, role_id)
     );
 
@@ -133,9 +133,9 @@ CREATE TABLE IF NOT EXISTS tracked_applications_disciplines (
                                                                 app_id uuid REFERENCES applications(id),
     discipline_id uuid REFERENCES disciplines(id),
     created_by uuid REFERENCES users(id),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (app_id, discipline_id)
     );
 
@@ -149,12 +149,12 @@ CREATE TABLE IF NOT EXISTS machines (
     cpu_info VARCHAR(512),
     gpu_info VARCHAR(512),
     ram_size_gb INTEGER,
-    last_known_ip INET,
-    last_seen_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    ip_address INET,
+    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     active BOOLEAN DEFAULT true NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     CONSTRAINT machine_unique_id_unique UNIQUE (machine_unique_id)
     );
@@ -165,9 +165,9 @@ CREATE TABLE IF NOT EXISTS user_role_disciplines (
     user_id uuid REFERENCES users(id) NOT NULL,
     role_id uuid REFERENCES roles(id) NOT NULL,
     discipline_id uuid REFERENCES disciplines(id) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     -- Enforce uniqueness of user-role-discipline combination
     UNIQUE(user_id, role_id, discipline_id)
@@ -178,17 +178,17 @@ CREATE TABLE IF NOT EXISTS sessions (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id uuid REFERENCES users(id) NOT NULL,
     machine_id uuid REFERENCES machines(id),
-    login_time TIMESTAMPTZ NOT NULL,
-    logout_time TIMESTAMPTZ,
+    login_time TIMESTAMP NOT NULL,
+    logout_time TIMESTAMP,
     ip_address INET,
     session_data JSONB DEFAULT '{}',
     continued_from_session UUID,
     continued_by_session UUID,
     previous_session_end_time TIMESTAMP WITH TIME ZONE,
                                             time_since_previous_session BIGINT DEFAULT 0,
-                                            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                                             created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     CONSTRAINT check_session_id_not_null CHECK (id IS NOT NULL),
     CONSTRAINT check_login_time_not_null CHECK (login_time IS NOT NULL),
@@ -213,11 +213,11 @@ ALTER TABLE sessions
 CREATE TABLE IF NOT EXISTS afk_periods (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     session_id uuid REFERENCES sessions(id) ON DELETE CASCADE,
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     CONSTRAINT check_afk_id_not_null CHECK (id IS NOT NULL),
     CONSTRAINT check_afk_start_time_not_null CHECK (start_time IS NOT NULL),
@@ -234,11 +234,11 @@ CREATE TABLE activity_events (
                                  session_id uuid REFERENCES sessions(id) ON DELETE CASCADE,
                                  app_id uuid REFERENCES applications(id),
                                  event_type event_type NOT NULL,
-                                 event_time TIMESTAMPTZ NOT NULL,
+                                 event_time TIMESTAMP NOT NULL,
                                  event_data JSONB DEFAULT '{}',
-                                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                                  created_by uuid REFERENCES users(id),
-                                 updated_at TIMESTAMPTZ NOT NULL,
+                                 updated_at TIMESTAMP NOT NULL,
                                  updated_by uuid REFERENCES users(id)
 ) PARTITION BY RANGE (event_time);
 END IF;
@@ -250,10 +250,10 @@ CREATE TABLE system_metrics (
                                 cpu_usage NUMERIC(5,2) CHECK (cpu_usage >= 0 AND cpu_usage <= 100),
                                 gpu_usage NUMERIC(5,2) CHECK (gpu_usage >= 0 AND gpu_usage <= 100),
                                 memory_usage NUMERIC(5,2) CHECK (memory_usage >= 0 AND memory_usage <= 100),
-                                measurement_time TIMESTAMPTZ NOT NULL,
-                                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                                measurement_time TIMESTAMP NOT NULL,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                                 created_by uuid REFERENCES users(id),
-                                updated_at TIMESTAMPTZ NOT NULL,
+                                updated_at TIMESTAMP NOT NULL,
                                 updated_by uuid REFERENCES users(id)
 ) PARTITION BY RANGE (measurement_time);
 END IF;
@@ -263,13 +263,13 @@ CREATE TABLE app_usage (
                            id uuid DEFAULT gen_random_uuid(),
                            session_id uuid REFERENCES sessions(id) ON DELETE CASCADE,
                            app_id uuid REFERENCES applications(id),
-                           start_time TIMESTAMPTZ NOT NULL,
-                           end_time TIMESTAMPTZ,
+                           start_time TIMESTAMP NOT NULL,
+                           end_time TIMESTAMP,
                            is_active BOOLEAN DEFAULT true,
                            window_title TEXT,
-                           created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                            created_by uuid REFERENCES users(id),
-                           updated_at TIMESTAMPTZ NOT NULL,
+                           updated_at TIMESTAMP NOT NULL,
                            updated_by uuid REFERENCES users(id),
                            CONSTRAINT app_usage_time_check CHECK (end_time IS NULL OR end_time > start_time)
 ) PARTITION BY RANGE (start_time);
@@ -280,16 +280,16 @@ CREATE TABLE session_events (
                                 id uuid DEFAULT gen_random_uuid(),
                                 session_id uuid REFERENCES sessions(id) ON DELETE CASCADE,
                                 event_type session_event_type NOT NULL,
-                                event_time TIMESTAMPTZ NOT NULL,
+                                event_time TIMESTAMP NOT NULL,
                                 user_id uuid REFERENCES users(id),
                                 previous_user_id uuid REFERENCES users(id),
                                 machine_id uuid REFERENCES machines(id),
                                 terminal_session_id VARCHAR(50),
                                 is_remote BOOLEAN DEFAULT false,
                                 event_data JSONB DEFAULT '{}',
-                                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
                                 created_by uuid REFERENCES users(id),
-                                updated_at TIMESTAMPTZ NOT NULL,
+                                updated_at TIMESTAMP NOT NULL,
                                 updated_by uuid REFERENCES users(id)
 ) PARTITION BY RANGE (event_time);
 END IF;
@@ -300,12 +300,12 @@ $$;
 CREATE TABLE IF NOT EXISTS maintenance_history (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     task_name text NOT NULL,
-    start_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    end_time TIMESTAMPTZ,
+    start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    end_time TIMESTAMP,
     status text NOT NULL,
     error_message text,
     affected_partitions text[],
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT unique_task_execution UNIQUE (task_name, start_time)
     );
 
@@ -703,19 +703,124 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
     token_type VARCHAR(20) NOT NULL,    -- 'user', 'service', 'refresh', 'api'
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     token_data JSONB NOT NULL,          -- All token metadata
-    expires_at TIMESTAMPTZ NOT NULL,    -- Expiration timestamp
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,    -- Expiration timestamp
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by uuid REFERENCES users(id),
-    updated_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
     updated_by uuid REFERENCES users(id),
     revoked BOOLEAN DEFAULT false,      -- For token revocation
     revocation_reason VARCHAR(255),     -- Optional reason for revocation
     device_info JSONB,                  -- Device information
-    last_used_at TIMESTAMPTZ            -- Track when token was last used
+    last_used_at TIMESTAMP            -- Track when token was last used
     );
 
 -- Indexes for token table
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_revoked ON auth_tokens(revoked) WHERE revoked = false;
+
+-- Add default values to columns that are missing them
+ALTER TABLE sessions
+    ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE sessions
+
+ALTER TABLE activity_events
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE activity_events
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE system_metrics
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE system_metrics
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE app_usage
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE app_usage
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE session_events
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE session_events
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE afk_periods
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE afk_periods
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE users
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE users
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE roles
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE roles
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE disciplines
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE disciplines
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE applications
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE applications
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE tracked_applications_roles
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE tracked_applications_roles
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE tracked_applications_disciplines
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE tracked_applications_disciplines
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE machines
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE machines
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE user_role_disciplines
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE user_role_disciplines
+    ALTER COLUMN updated_at DROP DEFAULT;
+
+ALTER TABLE auth_tokens
+ALTER COLUMN created_at TYPE TIMESTAMP WITHOUT TIME ZONE,
+    ALTER COLUMN updated_at TYPE TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE auth_tokens
+    ALTER COLUMN updated_at DROP DEFAULT;
 

@@ -116,16 +116,16 @@ void MachineModel::setRamSizeGB(int ramSizeGB)
     }
 }
 
-QString MachineModel::lastKnownIp() const
+QString MachineModel::ipAddress() const
 {
-    return m_lastKnownIp;
+    return m_ipAddress;
 }
 
-void MachineModel::setLastKnownIp(const QString &lastKnownIp)
+void MachineModel::setIpAddress(const QString &ipAddress)
 {
-    if (m_lastKnownIp != lastKnownIp) {
-        m_lastKnownIp = lastKnownIp;
-        emit lastKnownIpChanged(m_lastKnownIp);
+    if (m_ipAddress != ipAddress) {
+        m_ipAddress = ipAddress;
+        emit ipAddressChanged(m_ipAddress);
     }
 }
 

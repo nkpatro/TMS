@@ -63,11 +63,11 @@ QMap<QString, QVariant> ActivityEventRepository::prepareParamsForSave(ActivityEv
     params["session_id"] = event->sessionId().toString(QUuid::WithoutBraces);
     params["app_id"] = event->appId().isNull() ? QVariant(QVariant::Invalid) : event->appId().toString(QUuid::WithoutBraces);
     params["event_type"] = eventTypeToString(event->eventType());
-    params["event_time"] = event->eventTime().toString(Qt::ISODate);
+    params["event_time"] = event->eventTime().toUTC();
     params["event_data"] = QString(QJsonDocument(event->eventData()).toJson());
-    params["created_at"] = event->createdAt().toString(Qt::ISODate);
+    params["created_at"] = event->createdAt().toUTC();
     params["created_by"] = event->createdBy().isNull() ? QVariant(QVariant::Invalid) : event->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = event->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = event->updatedAt().toUTC();
     params["updated_by"] = event->updatedBy().isNull() ? QVariant(QVariant::Invalid) : event->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -233,8 +233,8 @@ QList<QSharedPointer<ActivityEventModel>> ActivityEventRepository::getByTimeRang
 
     QMap<QString, QVariant> params;
     params["session_id"] = sessionId.toString(QUuid::WithoutBraces);
-    params["start_time"] = startTime.toString(Qt::ISODate);
-    params["end_time"] = endTime.toString(Qt::ISODate);
+    params["start_time"] = startTime.toUTC();
+    params["end_time"] = endTime.toUTC();
 
     QString query = "SELECT * FROM activity_events WHERE session_id = :session_id "
                   "AND event_time >= :start_time AND event_time <= :end_time ORDER BY event_time DESC";
@@ -396,8 +396,8 @@ QJsonObject ActivityEventRepository::getActivitySummary(const QUuid &sessionId)
         timeParams,
         [](const QSqlQuery& query) -> ActivityEventModel* {
             QJsonObject data;
-            data["first_event"] = query.value("first_event").toDateTime().toString(Qt::ISODate);
-            data["last_event"] = query.value("last_event").toDateTime().toString(Qt::ISODate);
+            data["first_event"] = query.value("first_event").toDateTime().toUTC().toString();
+            data["last_event"] = query.value("last_event").toDateTime().toUTC().toString();
 
             // Store the original QDateTime values for calculation
             if (!query.value("first_event").isNull() && !query.value("last_event").isNull()) {

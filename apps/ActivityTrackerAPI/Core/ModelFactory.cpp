@@ -62,7 +62,7 @@ MachineModel* ModelFactory::createMachineFromQuery(const QSqlQuery& query) {
     machine->setCpuInfo(getStringOrDefault(query, "cpu_info"));
     machine->setGpuInfo(getStringOrDefault(query, "gpu_info"));
     machine->setRamSizeGB(getIntOrDefault(query, "ram_size_gb"));
-    machine->setLastKnownIp(getStringOrDefault(query, "last_known_ip"));
+    machine->setIpAddress(getStringOrDefault(query, "ip_address"));
     machine->setLastSeenAt(getDateTimeOrDefault(query, "last_seen_at"));
     machine->setActive(getBoolOrDefault(query, "active"));
 
@@ -82,10 +82,6 @@ SessionModel* ModelFactory::createSessionFromQuery(const QSqlQuery& query) {
 
     if (!query.value("logout_time").isNull()) {
         session->setLogoutTime(query.value("logout_time").toDateTime());
-    }
-
-    if (!query.value("ip_address").isNull()) {
-        session->setIpAddress(QHostAddress(query.value("ip_address").toString()));
     }
 
     if (!query.value("session_data").isNull()) {
@@ -865,8 +861,8 @@ QJsonObject ModelFactory::modelToJson(const UserModel* model) {
     json["email"] = model->email();
     json["photo"] = model->photo();
     json["active"] = model->active();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -880,13 +876,12 @@ QJsonObject ModelFactory::modelToJson(const SessionModel* model) {
     json["id"] = model->id().toString(QUuid::WithoutBraces);
     json["user_id"] = model->userId().toString(QUuid::WithoutBraces);
     json["machine_id"] = model->machineId().toString(QUuid::WithoutBraces);
-    json["login_time"] = model->loginTime().toString(Qt::ISODate);
+    json["login_time"] = model->loginTime().toUTC().toString();
 
     if (model->logoutTime().isValid()) {
-        json["logout_time"] = model->logoutTime().toString(Qt::ISODate);
+        json["logout_time"] = model->logoutTime().toUTC().toString();
     }
 
-    json["ip_address"] = model->ipAddress().toString();
     json["session_data"] = model->sessionData();
 
     if (!model->continuedFromSession().isNull()) {
@@ -898,12 +893,12 @@ QJsonObject ModelFactory::modelToJson(const SessionModel* model) {
     }
 
     if (model->previousSessionEndTime().isValid()) {
-        json["previous_session_end_time"] = model->previousSessionEndTime().toString(Qt::ISODate);
+        json["previous_session_end_time"] = model->previousSessionEndTime().toUTC().toString();
     }
 
     json["time_since_previous_session"] = model->timeSincePreviousSession();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -917,15 +912,15 @@ QJsonObject ModelFactory::modelToJson(const ActivityEventModel* model) {
     json["id"] = model->id().toString(QUuid::WithoutBraces);
     json["session_id"] = model->sessionId().toString(QUuid::WithoutBraces);
     json["event_type"] = static_cast<int>(model->eventType());
-    json["event_time"] = model->eventTime().toString(Qt::ISODate);
+    json["event_time"] = model->eventTime().toUTC().toString();
     json["event_data"] = model->eventData();
 
     if (!model->appId().isNull()) {
         json["app_id"] = model->appId().toString(QUuid::WithoutBraces);
     }
 
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -938,16 +933,16 @@ QJsonObject ModelFactory::modelToJson(const AfkPeriodModel* model) {
     QJsonObject json;
     json["id"] = model->id().toString(QUuid::WithoutBraces);
     json["session_id"] = model->sessionId().toString(QUuid::WithoutBraces);
-    json["start_time"] = model->startTime().toString(Qt::ISODate);
+    json["start_time"] = model->startTime().toUTC().toString();
 
     if (model->endTime().isValid()) {
-        json["end_time"] = model->endTime().toString(Qt::ISODate);
+        json["end_time"] = model->endTime().toUTC().toString();
     }
 
     json["is_active"] = model->isActive();
     json["duration"] = model->duration();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -964,8 +959,8 @@ QJsonObject ModelFactory::modelToJson(const ApplicationModel* model) {
     json["app_hash"] = model->appHash();
     json["is_restricted"] = model->isRestricted();
     json["tracking_enabled"] = model->trackingEnabled();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -979,17 +974,17 @@ QJsonObject ModelFactory::modelToJson(const AppUsageModel* model) {
     json["id"] = model->id().toString(QUuid::WithoutBraces);
     json["session_id"] = model->sessionId().toString(QUuid::WithoutBraces);
     json["app_id"] = model->appId().toString(QUuid::WithoutBraces);
-    json["start_time"] = model->startTime().toString(Qt::ISODate);
+    json["start_time"] = model->startTime().toUTC().toString();
 
     if (model->endTime().isValid()) {
-        json["end_time"] = model->endTime().toString(Qt::ISODate);
+        json["end_time"] = model->endTime().toUTC().toString();
     }
 
     json["is_active"] = model->isActive();
     json["window_title"] = model->windowTitle();
     json["duration"] = model->duration();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -1004,8 +999,8 @@ QJsonObject ModelFactory::modelToJson(const DisciplineModel* model) {
     json["code"] = model->code();
     json["name"] = model->name();
     json["description"] = model->description();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -1021,9 +1016,9 @@ QJsonObject ModelFactory::modelToJson(const SystemMetricsModel* model) {
     json["cpu_usage"] = model->cpuUsage();
     json["gpu_usage"] = model->gpuUsage();
     json["memory_usage"] = model->memoryUsage();
-    json["measurement_time"] = model->measurementTime().toString(Qt::ISODate);
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["measurement_time"] = model->measurementTime().toUTC().toString();
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -1038,8 +1033,8 @@ QJsonObject ModelFactory::modelToJson(const RoleModel* model) {
     json["code"] = model->code();
     json["name"] = model->name();
     json["description"] = model->description();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -1053,7 +1048,7 @@ QJsonObject ModelFactory::modelToJson(const SessionEventModel* model) {
     json["id"] = model->id().toString(QUuid::WithoutBraces);
     json["session_id"] = model->sessionId().toString(QUuid::WithoutBraces);
     json["event_type"] = static_cast<int>(model->eventType());
-    json["event_time"] = model->eventTime().toString(Qt::ISODate);
+    json["event_time"] = model->eventTime().toUTC().toString();
     json["user_id"] = model->userId().toString(QUuid::WithoutBraces);
 
     if (!model->previousUserId().isNull()) {
@@ -1064,8 +1059,8 @@ QJsonObject ModelFactory::modelToJson(const SessionEventModel* model) {
     json["terminal_session_id"] = model->terminalSessionId();
     json["is_remote"] = model->isRemote();
     json["event_data"] = model->eventData();
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -1080,8 +1075,8 @@ QJsonObject ModelFactory::modelToJson(const UserRoleDisciplineModel* model) {
     json["user_id"] = model->userId().toString(QUuid::WithoutBraces);
     json["role_id"] = model->roleId().toString(QUuid::WithoutBraces);
     json["discipline_id"] = model->disciplineId().toString(QUuid::WithoutBraces);
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     return json;
 }
@@ -1204,7 +1199,7 @@ template<typename T>
 void ModelFactory::setBaseModelFields(T* model, const QSqlQuery& query) {
     // Set created_at field if present in query
     if (query.record().indexOf("created_at") != -1 && !query.value("created_at").isNull()) {
-        model->setCreatedAt(query.value("created_at").toDateTime());
+        model->setCreatedAt(query.value("created_at").toDateTime().toLocalTime());
     }
 
     // Set created_by field if present in query
@@ -1214,7 +1209,7 @@ void ModelFactory::setBaseModelFields(T* model, const QSqlQuery& query) {
 
     // Set updated_at field if present in query
     if (query.record().indexOf("updated_at") != -1 && !query.value("updated_at").isNull()) {
-        model->setUpdatedAt(query.value("updated_at").toDateTime());
+        model->setUpdatedAt(query.value("updated_at").toDateTime().toLocalTime());
     }
 
     // Set updated_by field if present in query
@@ -1327,10 +1322,10 @@ QJsonObject ModelFactory::modelToJson(const MachineModel* model) {
     json["cpu_info"] = model->cpuInfo();
     json["gpu_info"] = model->gpuInfo();
     json["ram_size_gb"] = model->ramSizeGB();
-    json["last_known_ip"] = model->lastKnownIp();
+    json["ip_address"] = model->ipAddress();
 
     if (model->lastSeenAt().isValid()) {
-        json["last_seen_at"] = model->lastSeenAt().toString(Qt::ISODate);
+        json["last_seen_at"] = model->lastSeenAt().toUTC().toString();
     }
 
     json["active"] = model->active();
@@ -1461,14 +1456,14 @@ QJsonObject ModelFactory::modelToJson(const TokenModel* model) {
     json["token_id"] = model->tokenId();
     json["token_type"] = model->tokenType();
     json["user_id"] = model->userId().toString(QUuid::WithoutBraces);
-    json["expires_at"] = model->expiresAt().toString(Qt::ISODate);
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
+    json["expires_at"] = model->expiresAt().toUTC().toString();
+    json["created_at"] = model->createdAt().toUTC().toString();
 
     if (!model->createdBy().isNull()) {
         json["created_by"] = model->createdBy().toString(QUuid::WithoutBraces);
     }
 
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     if (!model->updatedBy().isNull()) {
         json["updated_by"] = model->updatedBy().toString(QUuid::WithoutBraces);
@@ -1480,7 +1475,7 @@ QJsonObject ModelFactory::modelToJson(const TokenModel* model) {
         json["revocation_reason"] = model->revocationReason();
     }
 
-    json["last_used_at"] = model->lastUsedAt().toString(Qt::ISODate);
+    json["last_used_at"] = model->lastUsedAt().toUTC().toString();
 
     // Include token data and device info
     json["token_data"] = model->tokenData();

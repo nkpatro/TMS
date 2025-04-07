@@ -301,7 +301,7 @@ QHttpServerResponse MachineController::createMachine(const QHttpServerRequest &r
         machine->setCpuInfo(json.value("cpuInfo").toString());
         machine->setGpuInfo(json.value("gpuInfo").toString());
         machine->setRamSizeGB(json.value("ramSizeGB").toInt());
-        machine->setLastKnownIp(json.value("lastKnownIp").toString());
+        machine->setIpAddress(json.value("ipAddress").toString());
 
         // Set user ID if provided
         if (json.contains("userId") && !json["userId"].toString().isEmpty()) {
@@ -413,8 +413,8 @@ QHttpServerResponse MachineController::updateMachine(const QString &id, const QH
             machine->setRamSizeGB(json["ramSizeGB"].toInt());
         }
 
-        if (json.contains("lastKnownIp")) {
-            machine->setLastKnownIp(json["lastKnownIp"].toString());
+        if (json.contains("ipAddress")) {
+            machine->setIpAddress(json["ipAddress"].toString());
         }
 
         // User ID for tracking changes
@@ -635,7 +635,7 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
         }
 
         // Get IP from request if not provided
-        QString ipStr = json.contains("lastKnownIp") ? json["lastKnownIp"].toString() : request.remoteAddress().toString();
+        QString ipStr = json.contains("ipAddress") ? json["ipAddress"].toString() : request.remoteAddress().toString();
         QHostAddress ipAddress(ipStr);
 
         // First try to find existing machine by unique ID if provided
@@ -686,8 +686,8 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
                 LOG_DEBUG("Updating OS");
             }
 
-            if (!ipStr.isEmpty() && machine->lastKnownIp() != ipStr) {
-                machine->setLastKnownIp(ipStr);
+            if (!ipStr.isEmpty() && machine->ipAddress() != ipStr) {
+                machine->setIpAddress(ipStr);
                 needsUpdate = true;
                 LOG_DEBUG("Updating IP");
             }
@@ -735,7 +735,7 @@ QHttpServerResponse MachineController::registerMachine(const QHttpServerRequest 
             newMachine->setMachineUniqueId(uniqueId);
             newMachine->setMacAddress(macAddress);
             newMachine->setOperatingSystem(os);
-            newMachine->setLastKnownIp(ipStr);
+            newMachine->setIpAddress(ipStr);
             newMachine->setLastSeenAt(QDateTime::currentDateTimeUtc());
 
             if (json.contains("cpuInfo") && !json["cpuInfo"].toString().isEmpty()) {

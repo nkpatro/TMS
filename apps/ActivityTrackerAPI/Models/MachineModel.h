@@ -19,7 +19,7 @@ class MachineModel : public QObject
     Q_PROPERTY(QString cpuInfo READ cpuInfo WRITE setCpuInfo NOTIFY cpuInfoChanged)
     Q_PROPERTY(QString gpuInfo READ gpuInfo WRITE setGpuInfo NOTIFY gpuInfoChanged)
     Q_PROPERTY(int ramSizeGB READ ramSizeGB WRITE setRamSizeGB NOTIFY ramSizeGBChanged)
-    Q_PROPERTY(QString lastKnownIp READ lastKnownIp WRITE setLastKnownIp NOTIFY lastKnownIpChanged)
+    Q_PROPERTY(QString ipAddress READ ipAddress WRITE setIpAddress NOTIFY ipAddressChanged)
     Q_PROPERTY(QDateTime lastSeenAt READ lastSeenAt WRITE setLastSeenAt NOTIFY lastSeenAtChanged)
     Q_PROPERTY(bool active READ active WRITE setActive NOTIFY activeChanged)
     Q_PROPERTY(QDateTime createdAt READ createdAt WRITE setCreatedAt NOTIFY createdAtChanged)
@@ -54,8 +54,8 @@ public:
     int ramSizeGB() const;
     void setRamSizeGB(int ramSizeGB);
 
-    QString lastKnownIp() const;
-    void setLastKnownIp(const QString &lastKnownIp);
+    QString ipAddress() const;
+    void setIpAddress(const QString &ipAddress);
 
     QDateTime lastSeenAt() const;
     void setLastSeenAt(const QDateTime &lastSeenAt);
@@ -84,7 +84,7 @@ signals:
     void cpuInfoChanged(const QString &cpuInfo);
     void gpuInfoChanged(const QString &gpuInfo);
     void ramSizeGBChanged(int ramSizeGB);
-    void lastKnownIpChanged(const QString &lastKnownIp);
+    void ipAddressChanged(const QString &ipAddress);
     void lastSeenAtChanged(const QDateTime &lastSeenAt);
     void activeChanged(bool active);
     void createdAtChanged(const QDateTime &createdAt);
@@ -101,7 +101,7 @@ private:
     QString m_cpuInfo;
     QString m_gpuInfo;
     int m_ramSizeGB;
-    QString m_lastKnownIp;
+    QString m_ipAddress;
     QDateTime m_lastSeenAt;
     bool m_active;
     QDateTime m_createdAt;

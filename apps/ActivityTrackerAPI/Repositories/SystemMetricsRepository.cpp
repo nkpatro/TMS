@@ -77,10 +77,10 @@ QMap<QString, QVariant> SystemMetricsRepository::prepareParamsForSave(SystemMetr
     params["cpu_usage"] = QString::number(metrics->cpuUsage());
     params["gpu_usage"] = QString::number(metrics->gpuUsage());
     params["memory_usage"] = QString::number(metrics->memoryUsage());
-    params["measurement_time"] = metrics->measurementTime().toString(Qt::ISODate);
-    params["created_at"] = metrics->createdAt().toString(Qt::ISODate);
+    params["measurement_time"] = metrics->measurementTime().toUTC();
+    params["created_at"] = metrics->createdAt().toUTC();
     params["created_by"] = metrics->createdBy().isNull() ? QVariant(QVariant::Invalid) : metrics->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = metrics->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = metrics->updatedAt().toUTC();
     params["updated_by"] = metrics->updatedBy().isNull() ? QVariant(QVariant::Invalid) : metrics->updatedBy().toString(QUuid::WithoutBraces);
     
     return params;
@@ -179,12 +179,12 @@ QList<QSharedPointer<SystemMetricsModel>> SystemMetricsRepository::getByTimeRang
 
     // Add time constraints if provided
     if (startTime.isValid()) {
-        params["start_time"] = startTime.toString(Qt::ISODate);
+        params["start_time"] = startTime.toUTC();
         query += " AND measurement_time >= :start_time";
     }
 
     if (endTime.isValid()) {
-        params["end_time"] = endTime.toString(Qt::ISODate);
+        params["end_time"] = endTime.toUTC();
         query += " AND measurement_time <= :end_time";
     }
 
@@ -216,11 +216,11 @@ QList<QSharedPointer<SystemMetricsModel>> SystemMetricsRepository::getByTimeRang
     // Log details about the query
     QString timeRangeInfo;
     if (startTime.isValid() && endTime.isValid()) {
-        timeRangeInfo = QString("from %1 to %2").arg(startTime.toString(Qt::ISODate), endTime.toString(Qt::ISODate));
+        timeRangeInfo = QString("from %1 to %2").arg(startTime.toUTC().toString(), endTime.toUTC().toString());
     } else if (startTime.isValid()) {
-        timeRangeInfo = QString("from %1 onwards").arg(startTime.toString(Qt::ISODate));
+        timeRangeInfo = QString("from %1 onwards").arg(startTime.toUTC().toString());
     } else if (endTime.isValid()) {
-        timeRangeInfo = QString("until %1").arg(endTime.toString(Qt::ISODate));
+        timeRangeInfo = QString("until %1").arg(endTime.toUTC().toString());
     } else {
         timeRangeInfo = "for all time";
     }
@@ -269,8 +269,8 @@ QJsonObject SystemMetricsRepository::getAverageMetrics(const QUuid &sessionId)
                 result["avg_gpu_usage"] = query.value("avg_gpu_usage").toDouble();
                 result["avg_memory_usage"] = query.value("avg_memory_usage").toDouble();
                 result["sample_count"] = query.value("sample_count").toInt();
-                result["start_time"] = query.value("start_time").toDateTime().toString(Qt::ISODate);
-                result["end_time"] = query.value("end_time").toDateTime().toString(Qt::ISODate);
+                result["start_time"] = query.value("start_time").toDateTime().toUTC().toString();
+                result["end_time"] = query.value("end_time").toDateTime().toUTC().toString();
             }
             
             // Create a default metrics model - we're not actually using this for the returned data
@@ -320,7 +320,7 @@ QJsonArray SystemMetricsRepository::getMetricsTimeSeries(const QUuid &sessionId,
         [&result](const QSqlQuery& query) -> SystemMetricsModel* {
             if (query.isValid()) {
                 QJsonObject dataPoint;
-                dataPoint["time"] = query.value("measurement_time").toDateTime().toString(Qt::ISODate);
+                dataPoint["time"] = query.value("measurement_time").toDateTime().toUTC().toString();
                 dataPoint["value"] = query.value("value").toDouble();
                 result.append(dataPoint);
             }
@@ -378,7 +378,7 @@ QJsonArray SystemMetricsRepository::getMetricsTimeSeries(const QUuid &sessionId,
         [&result](const QSqlQuery& query) -> SystemMetricsModel* {
             if (query.isValid()) {
                 QJsonObject dataPoint;
-                dataPoint["time"] = query.value("measurement_time").toDateTime().toString(Qt::ISODate);
+                dataPoint["time"] = query.value("measurement_time").toDateTime().toUTC().toString();
                 dataPoint["value"] = query.value("value").toDouble();
                 result.append(dataPoint);
             }

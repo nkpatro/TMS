@@ -386,7 +386,7 @@ QHttpServerResponse AuthController::handleServiceToken(const QHttpServerRequest 
         response["token"] = token;
         response["user"] = userToJson(user.data());
         response["service_id"] = serviceId;
-        response["expires_at"] = QDateTime::currentDateTimeUtc().addDays(7).toString(Qt::ISODate);
+        response["expires_at"] = QDateTime::currentDateTimeUtc().addDays(7).toUTC().toString();
 
         LOG_INFO(QString("Service token generated for user: %1 on machine: %2")
                 .arg(username, computerName));
@@ -676,8 +676,8 @@ QJsonObject AuthController::userToJson(UserModel *user) const
     json["photo"] = user->photo();
     json["active"] = user->active();
     json["verified"] = user->verified();
-    json["created_at"] = user->createdAt().toString(Qt::ISODate);
-    json["updated_at"] = user->updatedAt().toString(Qt::ISODate);
+    json["created_at"] = user->createdAt().toUTC().toString();
+    json["updated_at"] = user->updatedAt().toUTC().toString();
 
     if (!user->statusId().isNull()) {
         json["status_id"] = user->statusId().toString(QUuid::WithoutBraces);
@@ -784,9 +784,9 @@ QHttpServerResponse AuthController::handleGetTokens(const QHttpServerRequest &re
         tokenObj["id"] = token->id().toString(QUuid::WithoutBraces);
         tokenObj["token_id"] = token->tokenId();
         tokenObj["token_type"] = token->tokenType();
-        tokenObj["created_at"] = token->createdAt().toString(Qt::ISODate);
-        tokenObj["expires_at"] = token->expiresAt().toString(Qt::ISODate);
-        tokenObj["last_used_at"] = token->lastUsedAt().toString(Qt::ISODate);
+        tokenObj["created_at"] = token->createdAt().toUTC().toString();
+        tokenObj["expires_at"] = token->expiresAt().toUTC().toString();
+        tokenObj["last_used_at"] = token->lastUsedAt().toUTC().toString();
         tokenObj["is_expired"] = token->isExpired();
         tokenObj["is_revoked"] = token->isRevoked();
 
@@ -939,7 +939,7 @@ QHttpServerResponse AuthController::handleApiKey(const QHttpServerRequest &reque
         response["api_key"] = apiKey;
         response["service_id"] = serviceId;
         response["description"] = description;
-        response["expires_at"] = QDateTime::currentDateTimeUtc().addYears(1).toString(Qt::ISODate);
+        response["expires_at"] = QDateTime::currentDateTimeUtc().addYears(1).toUTC().toString();
 
         LOG_INFO(QString("API key generated for service: %1").arg(serviceId));
         return Http::Response::json(response);

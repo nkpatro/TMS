@@ -67,9 +67,9 @@ QMap<QString, QVariant> ApplicationRepository::prepareParamsForSave(ApplicationM
     params["app_hash"] = application->appHash();
     params["is_restricted"] = application->isRestricted() ? "true" : "false";
     params["tracking_enabled"] = application->trackingEnabled() ? "true" : "false";
-    params["created_at"] = application->createdAt().toString(Qt::ISODate);
+    params["created_at"] = application->createdAt().toUTC();
     params["created_by"] = application->createdBy().isNull() ? QVariant(QVariant::Invalid) : application->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = application->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = application->updatedAt().toUTC();
     params["updated_by"] = application->updatedBy().isNull() ? QVariant(QVariant::Invalid) : application->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -307,9 +307,9 @@ bool ApplicationRepository::assignApplicationToRole(const QUuid &appId, const QU
     params["app_id"] = appId.toString(QUuid::WithoutBraces);
     params["role_id"] = roleId.toString(QUuid::WithoutBraces);
     params["created_by"] = userId.toString(QUuid::WithoutBraces);
-    params["created_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["created_at"] = QDateTime::currentDateTimeUtc().toUTC();
     params["updated_by"] = userId.toString(QUuid::WithoutBraces);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "INSERT INTO tracked_applications_roles "
@@ -398,9 +398,9 @@ bool ApplicationRepository::assignApplicationToDiscipline(const QUuid &appId, co
     params["app_id"] = appId.toString(QUuid::WithoutBraces);
     params["discipline_id"] = disciplineId.toString(QUuid::WithoutBraces);
     params["created_by"] = userId.toString(QUuid::WithoutBraces);
-    params["created_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["created_at"] = QDateTime::currentDateTimeUtc().toUTC();
     params["updated_by"] = userId.toString(QUuid::WithoutBraces);
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
 
     QString query =
         "INSERT INTO tracked_applications_disciplines "

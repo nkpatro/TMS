@@ -422,13 +422,13 @@ QJsonObject UserRoleDisciplineController::assignmentToJson(UserRoleDisciplineMod
     json["user_id"] = uuidToString(model->userId());
     json["role_id"] = uuidToString(model->roleId());
     json["discipline_id"] = uuidToString(model->disciplineId());
-    json["created_at"] = model->createdAt().toString(Qt::ISODate);
+    json["created_at"] = model->createdAt().toUTC().toString();
 
     if (!model->createdBy().isNull()) {
         json["created_by"] = uuidToString(model->createdBy());
     }
 
-    json["updated_at"] = model->updatedAt().toString(Qt::ISODate);
+    json["updated_at"] = model->updatedAt().toUTC().toString();
 
     if (!model->updatedBy().isNull()) {
         json["updated_by"] = uuidToString(model->updatedBy());

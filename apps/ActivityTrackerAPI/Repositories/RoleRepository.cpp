@@ -75,9 +75,9 @@ QMap<QString, QVariant> RoleRepository::prepareParamsForSave(RoleModel* role)
     params["code"] = role->code();
     params["name"] = role->name();
     params["description"] = role->description();
-    params["created_at"] = role->createdAt().toString(Qt::ISODate);
+    params["created_at"] = role->createdAt().toUTC();
     params["created_by"] = role->createdBy().isNull() ? QVariant(QVariant::Invalid) : role->createdBy().toString(QUuid::WithoutBraces);
-    params["updated_at"] = role->updatedAt().toString(Qt::ISODate);
+    params["updated_at"] = role->updatedAt().toUTC();
     params["updated_by"] = role->updatedBy().isNull() ? QVariant(QVariant::Invalid) : role->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -90,7 +90,7 @@ QMap<QString, QVariant> RoleRepository::prepareParamsForUpdate(RoleModel* role)
     params["code"] = role->code();
     params["name"] = role->name();
     params["description"] = role->description();
-    params["updated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    params["updated_at"] = QDateTime::currentDateTimeUtc().toUTC();
     params["updated_by"] = role->updatedBy().isNull() ? QVariant(QVariant::Invalid) : role->updatedBy().toString(QUuid::WithoutBraces);
 
     return params;
@@ -302,7 +302,7 @@ QJsonObject RoleRepository::getRoleStats(const QUuid &id)
             data["active_sessions"] = statsResult->activeSessions;
 
             if (statsResult->lastUsed.isValid()) {
-                data["last_used"] = statsResult->lastUsed.toString(Qt::ISODate);
+                data["last_used"] = statsResult->lastUsed.toUTC().toString();
             } else {
                 data["last_used"] = QJsonValue::Null;
             }
