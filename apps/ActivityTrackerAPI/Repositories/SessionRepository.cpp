@@ -875,132 +875,67 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
         return nullptr;
     }
 
-    QSharedPointer<SessionModel> resultSession;
-    QUuid createdSessionId;
-    bool needsLoginEvent = false;
-    QDateTime eventLoginTime;
+    // Get or create the session for today
+    QSharedPointer<SessionModel> resultSession = getOrCreateSessionForToday(
+        userId, machineId, currentDateTime, sessionData);
 
-    // Get event repository reference for later use
-    SessionEventRepository* eventRepo = nullptr;
-    if (m_sessionEventRepository) {
-        eventRepo = m_sessionEventRepository;
+    if (!resultSession) {
+        LOG_ERROR("Failed to get or create session");
+        return nullptr;
     }
 
-    // First transaction just for session operations
+    // Create necessary events
+    if (m_sessionEventRepository && m_sessionEventRepository->isInitialized()) {
+        createSessionEvents(resultSession->id(), userId, machineId, currentDateTime, isRemote, terminalSessionId);
+    }
+
+    return resultSession;
+}
+
+QSharedPointer<SessionModel> SessionRepository::getOrCreateSessionForToday(
+    const QUuid& userId,
+    const QUuid& machineId,
+    const QDateTime& currentDateTime,
+    const QJsonObject& sessionData)
+{
+    QSharedPointer<SessionModel> resultSession;
+    QDate currentDate = currentDateTime.date();
+
+    // Find session for today
+    auto currentDaySession = findSessionForDay(userId, machineId, currentDate);
+
+    // Execute the session creation/update in a transaction
     bool success = executeInTransaction([&]() {
-        // Get the specific active session for this user and machine
-        auto activeSession = getActiveSessionForUser(userId, machineId);
-        QUuid lastActiveSessionId;
+        if (currentDaySession) {
+            LOG_INFO(QString("Found session for current day: %1").arg(currentDaySession->id().toString()));
 
-        if (activeSession) {
-            lastActiveSessionId = activeSession->id();
+            // If session is closed (has logout time), reopen it
+            if (currentDaySession->logoutTime().isValid()) {
+                LOG_INFO(QString("Reopening closed session: %1").arg(currentDaySession->id().toString()));
 
-            LOG_INFO(QString("Found active session: %1 with login time: %2")
-                .arg(activeSession->id().toString())
-                .arg(activeSession->loginTime().toUTC().toString()));
+                currentDaySession->setLogoutTime(QDateTime()); // Clear logout time
+                currentDaySession->setUpdatedAt(currentDateTime);
+                currentDaySession->setUpdatedBy(userId);
 
-            // Use safe method to end the session without creating events yet
-            // bool updateSuccess = safeEndSession(activeSession->id(), currentDateTime, nullptr);
-            bool updateSuccess = safeEndSession(activeSession->id(), currentDateTime, eventRepo);
-
-            if (!updateSuccess) {
-                LOG_ERROR(QString("Failed to end existing session: %1").arg(activeSession->id().toString()));
-                return false;
+                if (!update(currentDaySession.data())) {
+                    LOG_ERROR(QString("Failed to reopen session: %1").arg(currentDaySession->id().toString()));
+                    return false;
+                }
             }
 
-            LOG_INFO(QString("Ended active session: %1 for user %2 on machine %3")
-                .arg(activeSession->id().toString(), userId.toString(), machineId.toString()));
-        }
+            resultSession = currentDaySession;
+            return true;
+        } else {
+            // End any active session from a previous day
+            endPreviousDaySession(userId, machineId, currentDateTime);
 
-        // Check for a session created today that might be closed
-        QDate currentDate = currentDateTime.date();
-
-        // Direct SQL query to find today's session
-        QMap<QString, QVariant> params;
-        params["user_id"] = userId.toString(QUuid::WithoutBraces);
-        params["machine_id"] = machineId.toString(QUuid::WithoutBraces);
-        params["start_of_day"] = QDateTime(currentDate, QTime(0, 0, 0), Qt::UTC).toUTC();
-        params["end_of_day"] = QDateTime(currentDate, QTime(23, 59, 59, 999), Qt::UTC).toUTC();
-
-        QString query =
-            "SELECT * FROM sessions WHERE user_id = :user_id AND machine_id = :machine_id "
-            "AND login_time >= :start_of_day AND login_time <= :end_of_day "
-            "ORDER BY login_time DESC LIMIT 1";
-
-        auto todaySession = executeSingleSelectQuery(query, params);
-
-        if (todaySession && todaySession->logoutTime().isValid()) {
-            // Today's session exists but is closed - reopen it
-            LOG_INFO(QString("Reopening closed session for today: %1").arg(todaySession->id().toString()));
-
-            // Use safe method to reopen session without creating events yet
-            bool reopenSuccess = safeReopenSession(todaySession->id(), currentDateTime, nullptr);
-
-            if (!reopenSuccess) {
-                LOG_ERROR(QString("Failed to reopen session: %1").arg(todaySession->id().toString()));
-                return false;
-            }
-
-            // Refresh the session data
-            todaySession = getById(todaySession->id());
-            resultSession = todaySession;
-
-            // Mark that we need a login event
-            createdSessionId = todaySession->id();
-            needsLoginEvent = true;
-            eventLoginTime = currentDateTime; // Use current time for reopening login
-        }
-        else if (todaySession && !todaySession->logoutTime().isValid()) {
-            // Today's session exists and is active - just use it
-            LOG_INFO(QString("Using existing active session for today: %1").arg(todaySession->id().toString()));
-            resultSession = todaySession;
-
-            // Mark that we need a login event if the time is significantly different
-            if (qAbs(currentDateTime.secsTo(todaySession->loginTime())) > 300) { // More than 5 minutes different
-                createdSessionId = todaySession->id();
-                needsLoginEvent = true;
-                eventLoginTime = currentDateTime; // Use current time for additional login
-            }
-        }
-        else {
-            // No session for today - create a new one
-            LOG_INFO("Creating new session");
+            // Create a new session for today
+            LOG_INFO("Creating new session for today");
             SessionModel* newSession = new SessionModel();
-            // newSession->setId(QUuid::createUuid());
             newSession->setUserId(userId);
             newSession->setLoginTime(currentDateTime);
             newSession->setMachineId(machineId);
             newSession->setSessionData(sessionData);
-
-            // Set session continuity information if there was a previous session
-            if (!lastActiveSessionId.isNull()) {
-                auto lastSession = getById(lastActiveSessionId);
-                if (lastSession) {
-                    newSession->setContinuedFromSession(lastActiveSessionId);
-                    newSession->setPreviousSessionEndTime(lastSession->logoutTime());
-                    newSession->setTimeSincePreviousSession(
-                        lastSession->logoutTime().secsTo(currentDateTime));
-
-                    // Update the previous session to link to this one using direct SQL
-                    QMap<QString, QVariant> contParams;
-                    contParams["id"] = lastActiveSessionId.toString(QUuid::WithoutBraces);
-                    contParams["continued_by"] = newSession->id().toString(QUuid::WithoutBraces);
-                    contParams["updated_at"] = currentDateTime.toUTC();
-
-                    QString contQuery =
-                        "UPDATE sessions SET "
-                        "continued_by_session = :continued_by, "
-                        "updated_at = :updated_at "
-                        "WHERE id = :id";
-
-                    if (!executeModificationQuery(contQuery, contParams)) {
-                        LOG_ERROR(QString("Failed to update continuity link in previous session: %1")
-                            .arg(lastSession->id().toString()));
-                        delete newSession;
-                        return false;
-                    }
-                }
-            }
 
             // Set metadata
             newSession->setCreatedBy(userId);
@@ -1008,182 +943,282 @@ QSharedPointer<SessionModel> SessionRepository::createOrReuseSessionWithTransact
             newSession->setCreatedAt(currentDateTime);
             newSession->setUpdatedAt(currentDateTime);
 
-            // Verify all required fields are set before saving
-            if (!newSession->userId().isNull()
-                && !newSession->machineId().isNull()
-                && newSession->loginTime().isValid()) {
-
-                LOG_DEBUG(QString("New session validation passed: login_time=%1")
-                    .arg(newSession->loginTime().toUTC().toString()));
-
-                // Save the session
-                if (!save(newSession)) {
-                    LOG_ERROR("Failed to save new session");
-                    delete newSession;
-                    return false;
-                }
-
-                // Store info for creating the login event AFTER the transaction
-                createdSessionId = newSession->id();
-                needsLoginEvent = true;
-                eventLoginTime = currentDateTime;
-            } else {
-                LOG_ERROR("New session has missing required fields");
+            if (!save(newSession)) {
+                LOG_ERROR("Failed to save new session");
                 delete newSession;
                 return false;
             }
 
             resultSession = QSharedPointer<SessionModel>(newSession);
+            return true;
+        }
+    });
+
+    return success ? resultSession : nullptr;
+}
+
+QSharedPointer<SessionModel> SessionRepository::findSessionForDay(
+    const QUuid& userId,
+    const QUuid& machineId,
+    const QDate& date)
+{
+    LOG_DEBUG(QString("Finding session for date: %1").arg(date.toString()));
+
+    QMap<QString, QVariant> params;
+    params["user_id"] = userId.toString(QUuid::WithoutBraces);
+    params["machine_id"] = machineId.toString(QUuid::WithoutBraces);
+    params["start_of_day"] = QDateTime(date, QTime(0, 0, 0), Qt::UTC).toUTC();
+    params["end_of_day"] = QDateTime(date, QTime(23, 59, 59, 999), Qt::UTC).toUTC();
+
+    QString query =
+        "SELECT * FROM sessions WHERE user_id = :user_id AND machine_id = :machine_id "
+        "AND login_time >= :start_of_day AND login_time <= :end_of_day "
+        "ORDER BY login_time DESC LIMIT 1";
+
+    return executeSingleSelectQuery(query, params);
+}
+
+bool SessionRepository::endPreviousDaySession(
+    const QUuid& userId,
+    const QUuid& machineId,
+    const QDateTime& currentDateTime)
+{
+    LOG_DEBUG("Checking for active sessions from previous days");
+
+    auto activeSession = getActiveSessionForUser(userId, machineId);
+    if (activeSession && activeSession->loginTime().date() != currentDateTime.date()) {
+        LOG_INFO(QString("Found active session from previous day: %1, closing it")
+            .arg(activeSession->id().toString()));
+
+        // Close the session
+        activeSession->setLogoutTime(currentDateTime);
+        activeSession->setUpdatedAt(currentDateTime);
+        activeSession->setUpdatedBy(userId);
+
+        if (!update(activeSession.data())) {
+            LOG_ERROR(QString("Failed to end previous day's session: %1")
+                .arg(activeSession->id().toString()));
+            return false;
+        }
+
+        // Create logout event will happen in createSessionEvents
+        return true;
+    }
+
+    return true; // No previous day session to end
+}
+
+bool SessionRepository::createSessionEvents(
+    const QUuid& sessionId,
+    const QUuid& userId,
+    const QUuid& machineId,
+    const QDateTime& currentDateTime,
+    bool isRemote,
+    const QString& terminalSessionId)
+{
+    LOG_DEBUG(QString("Creating session events for session: %1").arg(sessionId.toString()));
+
+    if (!m_sessionEventRepository || !m_sessionEventRepository->isInitialized()) {
+        LOG_WARNING("Session event repository not available or not initialized");
+        return false;
+    }
+
+    return executeInTransaction([&]() {
+        // First verify the session exists in the database
+        if (!exists(sessionId)) {
+            LOG_ERROR(QString("Session %1 doesn't exist in database!")
+                .arg(sessionId.toString()));
+            return false;
+        }
+
+        // Get all session events sorted by time
+        QList<QSharedPointer<SessionEventModel>> sessionEvents = m_sessionEventRepository->getBySessionId(sessionId);
+
+        // Check if we need to create a logout before login
+        bool needLogout = checkIfLogoutNeeded(sessionEvents);
+        QDateTime lastLoginTime;
+
+        if (needLogout && !sessionEvents.isEmpty()) {
+            // Find the last login time
+            for (const auto& event : sessionEvents) {
+                if (event->eventType() == EventTypes::SessionEventType::Login) {
+                    lastLoginTime = event->eventTime();
+                    break;
+                }
+            }
+
+            // Create logout event
+            if (!createLogoutEvent(
+                sessionId, userId, machineId, lastLoginTime,
+                currentDateTime, isRemote)) {
+                LOG_ERROR("Failed to create logout event");
+                // Continue anyway to try creating login
+            }
+        }
+
+        // Create login event (unless one exists at almost exactly this time)
+        if (!loginEventExistsAtTime(sessionEvents, currentDateTime)) {
+            if (!createLoginEvent(
+                sessionId, userId, machineId, currentDateTime,
+                isRemote, terminalSessionId, needLogout)) {
+                LOG_ERROR("Failed to create login event");
+                return false;
+            }
+        } else {
+            LOG_INFO(QString("Login event already exists at time %1, skipping creation")
+                .arg(currentDateTime.toUTC().toString()));
         }
 
         return true;
     });
+}
 
-    if (!success) {
-        LOG_ERROR("Transaction failed during session creation/reuse");
-        return nullptr;
+bool SessionRepository::checkIfLogoutNeeded(
+    const QList<QSharedPointer<SessionEventModel>>& events)
+{
+    if (events.isEmpty()) {
+        return false;
     }
 
-    // Once the main transaction is complete and the session is committed to the database,
-    // handle event management in a separate transaction
-    if (!createdSessionId.isNull() && eventRepo && eventRepo->isInitialized()) {
-        // First verify the session exists in the database
-        bool sessionExists = exists(createdSessionId);
-        if (!sessionExists) {
-            LOG_ERROR(QString("Session %1 doesn't exist in database after transaction! Cannot create events.")
-                .arg(createdSessionId.toString()));
-        } else {
-            // NEW: Check for login events without corresponding logout events
-            // Get all session events
-            QList<QSharedPointer<SessionEventModel>> sessionEvents = eventRepo->getBySessionId(createdSessionId);
+    // Sort events by time (newest first)
+    QList<QSharedPointer<SessionEventModel>> sortedEvents = events;
+    std::sort(sortedEvents.begin(), sortedEvents.end(),
+        [](const QSharedPointer<SessionEventModel>& a, const QSharedPointer<SessionEventModel>& b) {
+            return a->eventTime() > b->eventTime();
+        });
 
-            // Track if we need to close any unclosed login events
-            bool hasUnclosedLoginEvent = false;
-            QDateTime lastLoginTime;
+    // If the most recent event is a login, we need a logout
+    if (!sortedEvents.isEmpty() &&
+        sortedEvents.first()->eventType() == EventTypes::SessionEventType::Login) {
+        LOG_INFO(QString("Last event is a login at %1, need to create logout first")
+            .arg(sortedEvents.first()->eventTime().toUTC().toString()));
+        return true;
+    }
 
-            if (!sessionEvents.isEmpty()) {
-                // Sort events by time
-                std::sort(sessionEvents.begin(), sessionEvents.end(),
-                    [](const QSharedPointer<SessionEventModel>& a, const QSharedPointer<SessionEventModel>& b) {
-                        return a->eventTime() < b->eventTime();
-                    });
+    LOG_INFO("Last event is not a login, we can create a new login directly");
+    return false;
+}
 
-                // Track login/logout state
-                bool loggedIn = false;
-                for (const auto& event : sessionEvents) {
-                    if (event->eventType() == EventTypes::SessionEventType::Login) {
-                        loggedIn = true;
-                        lastLoginTime = event->eventTime();
-                    }
-                    else if (event->eventType() == EventTypes::SessionEventType::Logout ||
-                             event->eventType() == EventTypes::SessionEventType::Lock) {
-                        loggedIn = false;
-                    }
-                }
-
-                // After processing all events, check if we're still in a logged-in state
-                hasUnclosedLoginEvent = loggedIn;
-            }
-
-            // Create a transaction for the event operations
-            executeInTransaction([&]() {
-                // If there's an unclosed login event, create a logout event before our new login
-                if (hasUnclosedLoginEvent) {
-                    LOG_INFO(QString("Found unclosed login event from %1. Creating logout event before new login.")
-                        .arg(lastLoginTime.toUTC().toString()));
-
-                    // Create a logout event to close the previous login
-                    SessionEventModel* logoutEvent = new SessionEventModel();
-                    logoutEvent->setId(QUuid::createUuid());
-                    logoutEvent->setSessionId(createdSessionId);
-                    logoutEvent->setEventType(EventTypes::SessionEventType::Logout);
-
-                    // Place the logout event 1 minute before current login
-                    QDateTime logoutTime = currentDateTime.addSecs(-60);
-                    if (logoutTime < lastLoginTime) {
-                        // Ensure the logout is after the login
-                        logoutTime = lastLoginTime.addSecs(60);
-                    }
-
-                    logoutEvent->setEventTime(logoutTime);
-                    logoutEvent->setUserId(userId);
-                    logoutEvent->setMachineId(machineId);
-                    logoutEvent->setIsRemote(isRemote);
-
-                    // Add metadata about auto-generation
-                    QJsonObject logoutData;
-                    logoutData["reason"] = "auto_generated_to_close_unclosed_login";
-                    logoutData["auto_generated"] = true;
-                    logoutData["corresponding_login_time"] = lastLoginTime.toUTC().toString();
-                    logoutEvent->setEventData(logoutData);
-
-                    // Set metadata
-                    QDateTime now = QDateTime::currentDateTimeUtc();
-                    logoutEvent->setCreatedBy(userId);
-                    logoutEvent->setUpdatedBy(userId);
-                    logoutEvent->setCreatedAt(now);
-                    logoutEvent->setUpdatedAt(now);
-
-                    bool eventSuccess = eventRepo->save(logoutEvent);
-                    delete logoutEvent;
-
-                    if (!eventSuccess) {
-                        LOG_ERROR(QString("Failed to create auto-generated logout event for session %1")
-                            .arg(createdSessionId.toString()));
-                        // Continue anyway to try creating login event
-                    }
-                }
-
-                // Now create the new login event if needed
-                if (needsLoginEvent) {
-                    LOG_INFO(QString("Creating login event for session %1")
-                        .arg(createdSessionId.toString()));
-
-                    // Check if there's already a login event at this time
-                    bool hasExistingLogin = hasLoginEvent(createdSessionId, eventLoginTime, eventRepo);
-
-                    if (!hasExistingLogin) {
-                        // Create login event
-                        SessionEventModel* loginEvent = new SessionEventModel();
-                        loginEvent->setId(QUuid::createUuid());
-                        loginEvent->setSessionId(createdSessionId);
-                        loginEvent->setEventType(EventTypes::SessionEventType::Login);
-                        loginEvent->setEventTime(eventLoginTime);
-                        loginEvent->setUserId(userId);
-                        loginEvent->setMachineId(machineId);
-                        loginEvent->setIsRemote(isRemote);
-
-                        if (!terminalSessionId.isEmpty()) {
-                            loginEvent->setTerminalSessionId(terminalSessionId);
-                        }
-
-                        // Set metadata
-                        QDateTime now = QDateTime::currentDateTimeUtc();
-                        loginEvent->setCreatedBy(userId);
-                        loginEvent->setUpdatedBy(userId);
-                        loginEvent->setCreatedAt(now);
-                        loginEvent->setUpdatedAt(now);
-
-                        bool eventSuccess = eventRepo->save(loginEvent);
-                        delete loginEvent;
-
-                        if (!eventSuccess) {
-                            LOG_ERROR(QString("Failed to create login event for session %1")
-                                .arg(createdSessionId.toString()));
-                            return false;
-                        }
-                    } else {
-                        LOG_INFO(QString("Login event already exists for session %1 at time %2")
-                            .arg(createdSessionId.toString(), eventLoginTime.toUTC().toString()));
-                    }
-                }
-
-                return true;
-            });
+bool SessionRepository::loginEventExistsAtTime(
+    const QList<QSharedPointer<SessionEventModel>>& events,
+    const QDateTime& time)
+{
+    // Check if there's a login event within 5 seconds of the given time
+    for (const auto& event : events) {
+        if (event->eventType() == EventTypes::SessionEventType::Login &&
+            qAbs(event->eventTime().secsTo(time)) < 5) { // within 5 seconds
+            return true;
         }
     }
 
-    return resultSession;
+    return false;
+}
+
+bool SessionRepository::createLogoutEvent(
+    const QUuid& sessionId,
+    const QUuid& userId,
+    const QUuid& machineId,
+    const QDateTime& lastLoginTime,
+    const QDateTime& currentTime,
+    bool isRemote)
+{
+    LOG_INFO(QString("Creating logout event for session %1").arg(sessionId.toString()));
+
+    // Create a logout event
+    SessionEventModel* logoutEvent = new SessionEventModel();
+    logoutEvent->setId(QUuid::createUuid());
+    logoutEvent->setSessionId(sessionId);
+    logoutEvent->setEventType(EventTypes::SessionEventType::Logout);
+
+    // Place logout just before the current time
+    QDateTime logoutTime = currentTime.addSecs(-30);
+    if (logoutTime < lastLoginTime) {
+        // Ensure logout is after login
+        logoutTime = lastLoginTime.addSecs(30);
+    }
+
+    logoutEvent->setEventTime(logoutTime);
+    logoutEvent->setUserId(userId);
+    logoutEvent->setMachineId(machineId);
+    logoutEvent->setIsRemote(isRemote);
+
+    QJsonObject logoutData;
+    logoutData["reason"] = "auto_generated_before_new_login";
+    logoutData["auto_generated"] = true;
+    logoutEvent->setEventData(logoutData);
+
+    QDateTime now = QDateTime::currentDateTimeUtc();
+    logoutEvent->setCreatedBy(userId);
+    logoutEvent->setUpdatedBy(userId);
+    logoutEvent->setCreatedAt(now);
+    logoutEvent->setUpdatedAt(now);
+
+    bool success = m_sessionEventRepository->save(logoutEvent);
+    delete logoutEvent;
+
+    if (success) {
+        LOG_INFO(QString("Successfully created logout event at %1 for session %2")
+            .arg(logoutTime.toUTC().toString(), sessionId.toString()));
+    } else {
+        LOG_ERROR(QString("Failed to create logout event for session %1")
+            .arg(sessionId.toString()));
+    }
+
+    return success;
+}
+
+bool SessionRepository::createLoginEvent(
+    const QUuid& sessionId,
+    const QUuid& userId,
+    const QUuid& machineId,
+    const QDateTime& loginTime,
+    bool isRemote,
+    const QString& terminalSessionId,
+    bool afterLogout)
+{
+    LOG_INFO(QString("Creating login event for session %1").arg(sessionId.toString()));
+
+    SessionEventModel* loginEvent = new SessionEventModel();
+    loginEvent->setId(QUuid::createUuid());
+    loginEvent->setSessionId(sessionId);
+    loginEvent->setEventType(EventTypes::SessionEventType::Login);
+    loginEvent->setEventTime(loginTime);
+    loginEvent->setUserId(userId);
+    loginEvent->setMachineId(machineId);
+    loginEvent->setIsRemote(isRemote);
+
+    if (!terminalSessionId.isEmpty()) {
+        loginEvent->setTerminalSessionId(terminalSessionId);
+    }
+
+    // Add context about this login
+    QJsonObject loginData;
+    if (afterLogout) {
+        loginData["reason"] = "new_login_after_closing_previous";
+    } else {
+        loginData["reason"] = "new_login";
+    }
+    loginEvent->setEventData(loginData);
+
+    QDateTime now = QDateTime::currentDateTimeUtc();
+    loginEvent->setCreatedBy(userId);
+    loginEvent->setUpdatedBy(userId);
+    loginEvent->setCreatedAt(now);
+    loginEvent->setUpdatedAt(now);
+
+    bool success = m_sessionEventRepository->save(loginEvent);
+    delete loginEvent;
+
+    if (success) {
+        LOG_INFO(QString("Successfully created login event at %1 for session %2")
+            .arg(loginTime.toUTC().toString(), sessionId.toString()));
+    } else {
+        LOG_ERROR(QString("Failed to create login event for session %1: %2")
+            .arg(sessionId.toString())
+            .arg(m_sessionEventRepository->lastError()));
+    }
+
+    return success;
 }
 
 bool SessionRepository::safeEndSession(const QUuid &sessionId, const QDateTime &logoutTime, SessionEventRepository* eventRepository)

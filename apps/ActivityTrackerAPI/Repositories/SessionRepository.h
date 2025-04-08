@@ -54,6 +54,21 @@ public:
         bool isRemote = false,
         const QString& terminalSessionId = QString());
 
+    QSharedPointer<SessionModel> getOrCreateSessionForToday(
+        const QUuid& userId, const QUuid& machineId,
+        const QDateTime& currentDateTime, const QJsonObject& sessionData);
+
+    QSharedPointer<SessionModel> findSessionForDay(const QUuid& userId, const QUuid& machineId, const QDate& date);
+    bool endPreviousDaySession(const QUuid& userId, const QUuid& machineId, const QDateTime& currentDateTime);
+    bool createSessionEvents(const QUuid& sessionId, const QUuid& userId, const QUuid& machineId,
+        const QDateTime& currentDateTime, bool isRemote, const QString& terminalSessionId);
+    bool checkIfLogoutNeeded(const QList<QSharedPointer<SessionEventModel>>& events);
+    bool loginEventExistsAtTime(const QList<QSharedPointer<SessionEventModel>>& events, const QDateTime& time);
+    bool createLogoutEvent(const QUuid& sessionId, const QUuid& userId, const QUuid& machineId,
+        const QDateTime& lastLoginTime, const QDateTime& currentTime, bool isRemote);
+    bool createLoginEvent(const QUuid& sessionId, const QUuid& userId, const QUuid& machineId,
+        const QDateTime& loginTime, bool isRemote, const QString& terminalSessionId, bool afterLogout);
+
     void setSessionEventRepository(SessionEventRepository* sessionEventRepository);
     bool hasSessionEventRepository() const { return m_sessionEventRepository != nullptr && m_sessionEventRepository->isInitialized(); }
 
