@@ -54,7 +54,7 @@ public:
         bool isRemote = false,
         const QString& terminalSessionId = QString());
 
-    void setSessionEventRepository(SessionEventRepository* sessionEventRepository) { m_sessionEventRepository = sessionEventRepository; }
+    void setSessionEventRepository(SessionEventRepository* sessionEventRepository);
     bool hasSessionEventRepository() const { return m_sessionEventRepository != nullptr && m_sessionEventRepository->isInitialized(); }
 
 protected:
