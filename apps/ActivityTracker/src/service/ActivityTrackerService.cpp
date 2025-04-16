@@ -114,6 +114,10 @@ bool ActivityTrackerService::initialize()
         return false;
     }
 
+    if (m_multiUserMode && m_userManager && m_trackerClient) {
+        m_trackerClient->setMultiUserManager(m_userManager);
+    }
+
     // Apply configuration settings
     m_trackerClient->setDataSendInterval(m_dataSendInterval);
 

@@ -164,7 +164,7 @@ bool SessionManager::recordSessionEvent(const QUuid &sessionId, const QString &e
     QJsonObject data = eventData;
     data["event_type"] = eventType;
     data["session_id"] = sessionId.toString();
-    data["event_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    data["event_time"] = QDateTime::currentDateTime().toUTC().toString();
 
     // Update our local cache of events
     QDateTime eventTime = QDateTime::currentDateTime();
@@ -194,7 +194,7 @@ bool SessionManager::recordLoginEvent(const QUuid &sessionId, const QDateTime &l
     QJsonObject data = eventData;
     data["event_type"] = "login";
     data["session_id"] = sessionId.toString();
-    data["event_time"] = loginTime.toString(Qt::ISODate);
+    data["event_time"] = loginTime.toUTC().toString();
 
     // Update our local cache
     m_lastEventTimes[sessionId] = loginTime;
@@ -216,7 +216,7 @@ bool SessionManager::recordMissingLogoutEvent(const QUuid &sessionId, const QDat
     QJsonObject data = eventData;
     data["event_type"] = "logout";
     data["session_id"] = sessionId.toString();
-    data["event_time"] = logoutTime.toString(Qt::ISODate);
+    data["event_time"] = logoutTime.toUTC().toString();
 
     // Update our local cache
     m_lastEventTimes[sessionId] = logoutTime;
@@ -236,7 +236,7 @@ bool SessionManager::recordActivityEvent(const QUuid &sessionId, const QString &
     QJsonObject data = eventData;
     data["event_type"] = eventType;
     data["session_id"] = sessionId.toString();
-    data["event_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    data["event_time"] = QDateTime::currentDateTime().toUTC().toString();
 
     // Update our local cache
     m_lastEventTimes[sessionId] = QDateTime::currentDateTime();
@@ -263,7 +263,7 @@ bool SessionManager::startAppUsage(const QUuid &sessionId, const QString &appNam
     data["app_name"] = appName;
     data["window_title"] = windowTitle;
     data["executable_path"] = executablePath;
-    data["start_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    data["start_time"] = QDateTime::currentDateTime().toUTC().toString();
 
     // Send request to start app usage
     QJsonObject responseData;
@@ -291,7 +291,7 @@ bool SessionManager::startAppUsage(const QUuid &sessionId, const QString &appNam
         addToPendingQueue(DataType::AppUsage, sessionId, data);
 
         // Generate a temporary ID
-        usageId = QUuid::createUuid();
+        // usageId = QUuid::createUuid();
         return true;
     }
 
@@ -322,7 +322,7 @@ bool SessionManager::endAppUsage(const QUuid &usageId)
     QJsonObject data;
     data["usage_id"] = usageId.toString().remove('{').remove('}');
     data["session_id"] = sessionId.toString().remove('{').remove('}');
-    data["end_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    data["end_time"] = QDateTime::currentDateTime().toUTC().toString();
 
     // Send request to end app usage
     QJsonObject responseData;
@@ -363,7 +363,7 @@ bool SessionManager::recordSystemMetrics(const QUuid &sessionId, float cpuUsage,
     data["cpu_usage"] = cpuUsage;
     data["gpu_usage"] = gpuUsage;
     data["memory_usage"] = ramUsage;
-    data["measurement_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    data["measurement_time"] = QDateTime::currentDateTime().toUTC().toString();
 
     // Queue metrics for sending to server
     return addToPendingQueue(DataType::SystemMetrics, sessionId, data);
@@ -387,7 +387,7 @@ bool SessionManager::startAfkPeriod(const QUuid &sessionId)
     // Prepare AFK data
     QJsonObject data;
     data["session_id"] = sessionId.toString();
-    data["start_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    data["start_time"] = QDateTime::currentDateTime().toUTC().toString();
 
     // Send request to start AFK period
     QJsonObject responseData;
@@ -406,7 +406,7 @@ bool SessionManager::startAfkPeriod(const QUuid &sessionId)
         addToPendingQueue(DataType::AfkPeriod, sessionId, data);
 
         // Set a temporary ID
-        m_activeAfkPeriodId = QUuid::createUuid();
+        // m_activeAfkPeriodId = QUuid::createUuid();
         return true;
     }
 
@@ -431,7 +431,7 @@ bool SessionManager::endAfkPeriod(const QUuid &sessionId)
     // Prepare AFK data
     QJsonObject data;
     data["afk_id"] = m_activeAfkPeriodId.toString();
-    data["end_time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+    data["end_time"] = QDateTime::currentDateTime().toUTC().toString();
 
     // Send request to end AFK period
     QJsonObject responseData;

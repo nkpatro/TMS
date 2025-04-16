@@ -49,6 +49,7 @@ public:
     bool queueData(DataType type, const QUuid& sessionId, const QJsonObject& data, 
                   const QDateTime& timestamp = QDateTime::currentDateTime());
     bool processPendingQueue(int maxItems = 50);
+    bool processAppUsageData(const QueuedData& item);
 
     bool isOfflineMode() const { return m_offlineMode; }
     int queueSize() const { return m_dataQueue.size(); }

@@ -16,6 +16,7 @@ class SessionStateMachine;
 class SyncManager;
 class ActivityMonitorBatcher;
 class ConfigManager;
+class MultiUserManager;
 
 class ActivityTrackerClient : public QObject
 {
@@ -47,6 +48,7 @@ public:
     bool authenticate(const QString& username, const QString& machineId);
     bool setAuthToken(const QString& token);
     void setConfigManager(ConfigManager* configManager);
+    void setMultiUserManager(MultiUserManager* userManager);
 
 signals:
     // Status signals

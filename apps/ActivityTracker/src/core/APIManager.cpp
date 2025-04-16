@@ -270,18 +270,33 @@ bool APIManager::startAppUsage(const QJsonObject &usageData, QJsonObject &respon
         return false;
     }
 
-    LOG_DEBUG("Starting app usage tracking");
+    // Make sure app_id is present and valid
+    if (!usageData.contains("app_id") || usageData["app_id"].toString().isEmpty() ||
+        usageData["app_id"].toString() == "00000000-0000-0000-0000-000000000000") {
+        LOG_ERROR("Cannot start app usage: valid app_id is required");
+        responseData["error"] = true;
+        responseData["message"] = "Valid application ID is required";
+        return false;
+        }
+
+    // Get the session ID for constructing the correct endpoint
+    QString sessionId = usageData["session_id"].toString().remove('{').remove('}');
+    LOG_DEBUG(QString("Starting app usage tracking for session %1").arg(sessionId));
 
     // Create a copy of the data to ensure we don't modify the original
     QJsonObject data = usageData;
 
-    // Ensure session_id doesn't have curly braces
-    if (data.contains("session_id")) {
-        QString sessionId = data["session_id"].toString();
-        data["session_id"] = sessionId.remove('{').remove('}');
+    // First try the session-specific endpoint
+    QString sessionEndpoint = "sessions/" + sessionId + "/app-usages";
+    bool success = sendRequest(sessionEndpoint, data, responseData);
+
+    // If that fails, try the direct endpoint
+    if (!success) {
+        LOG_WARNING("Session-specific app usage endpoint failed, trying direct endpoint");
+        success = sendRequest("app-usages", data, responseData);
     }
 
-    return sendRequest("app-usages", data, responseData);
+    return success;
 }
 
 bool APIManager::endAppUsage(const QUuid &usageId, const QJsonObject &usageData, QJsonObject &responseData)
@@ -299,20 +314,39 @@ bool APIManager::endAppUsage(const QUuid &usageId, const QJsonObject &usageData,
         return false;
     }
 
-    LOG_DEBUG(QString("Ending app usage: %1").arg(usageId.toString()));
+    // Validate usage ID
+    if (usageId.isNull() || usageId == QUuid("00000000-0000-0000-0000-000000000000")) {
+        LOG_ERROR("Cannot end app usage: invalid usage ID");
+        responseData["error"] = true;
+        responseData["message"] = "Valid usage ID is required";
+        return false;
+    }
+
+    // Get the session ID for constructing the correct endpoint
+    QString sessionId = usageData["session_id"].toString().remove('{').remove('}');
+    LOG_DEBUG(QString("Ending app usage: %1 for session %2").arg(usageId.toString(), sessionId));
 
     // Remove braces from usage ID for endpoint
     QString cleanUsageId = usageId.toString().remove('{').remove('}');
-    QString endpoint = "app-usages/" + cleanUsageId + "/end";
 
     // Ensure session_id doesn't have braces
     QJsonObject data = usageData;
     if (data.contains("session_id")) {
-        QString sessionId = data["session_id"].toString();
-        data["session_id"] = sessionId.remove('{').remove('}');
+        data["session_id"] = sessionId;
     }
 
-    return sendRequest(endpoint, data, responseData);
+    // First try the session-specific endpoint
+    QString sessionEndpoint = "sessions/" + sessionId + "/app-usages/" + cleanUsageId + "/end";
+    bool success = sendRequest(sessionEndpoint, data, responseData);
+
+    // If that fails, try the direct endpoint
+    if (!success) {
+        LOG_WARNING("Session-specific app usage end endpoint failed, trying direct endpoint");
+        QString directEndpoint = "app-usages/" + cleanUsageId + "/end";
+        success = sendRequest(directEndpoint, data, responseData);
+    }
+
+    return success;
 }
 
 bool APIManager::batchSystemMetrics(const QJsonObject &metricsData)
@@ -795,10 +829,10 @@ bool APIManager::getUserStats(const QString &userId, const QDate &startDate, con
 
     QUrlQuery query;
     if (startDate.isValid()) {
-        query.addQueryItem("start_date", startDate.toString(Qt::ISODate));
+        query.addQueryItem("start_date", startDate.toString());
     }
     if (endDate.isValid()) {
-        query.addQueryItem("end_date", endDate.toString(Qt::ISODate));
+        query.addQueryItem("end_date", endDate.toString());
     }
 
     QString endpoint = "users/" + userId + "/stats";
@@ -1191,7 +1225,7 @@ bool APIManager::updateMachineLastSeen(const QString &machineId, const QDateTime
     QString endpoint = "machines/" + machineId + "/lastseen";
     QJsonObject timeData;
     if (timestamp.isValid()) {
-        timeData["timestamp"] = timestamp.toString(Qt::ISODate);
+        timeData["timestamp"] = timestamp.toUTC().toString();
     }
 
     return sendRequest(endpoint, timeData, responseData, "PUT");

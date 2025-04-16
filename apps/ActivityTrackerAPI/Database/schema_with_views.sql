@@ -928,3 +928,12 @@ CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_revoked ON auth_tokens(revoked) WHERE revoked = false;
 
+-- Update the session continuity fields to be nullable
+ALTER TABLE sessions ALTER COLUMN continued_from_session DROP NOT NULL;
+ALTER TABLE sessions ALTER COLUMN continued_by_session DROP NOT NULL;
+ALTER TABLE sessions ALTER COLUMN previous_session_end_time DROP NOT NULL;
+ALTER TABLE sessions ALTER COLUMN time_since_previous_session DROP NOT NULL;
+
+-- Or, if you want to completely remove the constraints
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS fk_continued_from_session;
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS fk_continued_by_session;

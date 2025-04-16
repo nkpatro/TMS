@@ -17,7 +17,7 @@ DbConfig DbConfig::fromEnvironment() {
     auto env = QProcessEnvironment::systemEnvironment();
 
     config.m_host = env.value("DB_HOST", "10.1.71.113");
-    config.m_database = env.value("DB_NAME", "testdb03");
+    config.m_database = env.value("DB_NAME", "testdb02");
     config.m_username = env.value("DB_USER", "postgres");
     config.m_password = env.value("DB_PASSWORD", "logics22");
     config.m_port = env.value("DB_PORT", "5432").toInt();

@@ -368,6 +368,12 @@ void ActivityTrackerClient::setConfigManager(ConfigManager* configManager) {
         this, &ActivityTrackerClient::onConfigChanged);
 }
 
+void ActivityTrackerClient::setMultiUserManager(MultiUserManager* userManager) {
+    if (m_sessionManager) {
+        m_sessionManager->setMultiUserManager(userManager);
+    }
+}
+
 void ActivityTrackerClient::onConfigChanged()
 {
     LOG_INFO("Configuration changed, applying updates");
@@ -464,6 +470,26 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString &appName, const Q
         // Get app ID - this is the key change
         QString appId = getAppId(appName, executablePath);
 
+        // If we couldn't get a valid app ID, log but continue with basic tracking
+        if (appId.isEmpty()) {
+            LOG_WARNING(QString("Tracking app without ID: %1").arg(appName));
+            // Don't attempt to record app usage without a valid ID
+            // But still update current app tracking
+            m_currentAppName = appName;
+            m_currentWindowTitle = windowTitle;
+            m_currentAppPath = executablePath;
+            m_currentAppId = QString(); // Clear current app ID
+
+            // Still record basic activity event
+            QJsonObject eventData;
+            eventData["app_name"] = appName;
+            eventData["window_title"] = windowTitle;
+            eventData["executable_path"] = executablePath;
+            eventData["focus_changes"] = focusChanges;
+            recordActivityEvent("app_changed", eventData);
+            return;
+        }
+
         // If there was a previous app, end its usage
         if (!m_currentAppName.isEmpty()) {
             QJsonObject endData;
@@ -474,7 +500,9 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString &appName, const Q
 
             // Add app ID if we have it
             if (!m_currentAppId.isEmpty()) {
-                endData["app_id"] = m_currentAppId;
+                // Todo: Revisit this
+                //endData["app_id"] = m_currentAppId;
+                endData["id"] = m_currentAppId;
             }
 
             QUuid sessionId = this->sessionId();
@@ -493,7 +521,8 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString &appName, const Q
 
         // Add app ID if we have it
         if (!appId.isEmpty()) {
-            startData["app_id"] = appId;
+            //startData["app_id"] = appId;
+            startData["id"] = appId;
         }
 
         QUuid sessionId = this->sessionId();
@@ -517,7 +546,8 @@ void ActivityTrackerClient::onBatchedAppActivity(const QString &appName, const Q
 
         // Add app ID if available
         if (!appId.isEmpty()) {
-            eventData["app_id"] = appId;
+            //eventData["app_id"] = appId;
+            eventData["id"] = appId;
         }
 
         recordActivityEvent("app_changed", eventData);
@@ -841,12 +871,40 @@ QString ActivityTrackerClient::getAppId(const QString &appName, const QString &e
         return QString();
     }
 
+    // Handle empty inputs
+    if (appName.isEmpty() || executablePath.isEmpty()) {
+        LOG_WARNING(QString("Cannot get app ID: empty app name or path"));
+        return QString();
+    }
+
     // First check if app is in cache
     QString appId = m_monitorManager->appCache()->findAppId(executablePath);
 
+    // Check for null UUID
+    if (appId == "00000000-0000-0000-0000-000000000000") {
+        LOG_ERROR(QString("Retrieved null UUID for app %1, treating as not found").arg(appName));
+        appId = QString();
+    }
+
     if (appId.isEmpty()) {
         // App not in cache, register it
+        LOG_INFO(QString("App not in cache, registering: %1 (%2)").arg(appName, executablePath));
         appId = m_monitorManager->appCache()->registerApplication(appName, executablePath);
+
+        // Verify we got a valid ID back
+        if (appId.isEmpty() || appId == "00000000-0000-0000-0000-000000000000") {
+            LOG_ERROR(QString("Failed to get valid app ID for %1 (%2)")
+                     .arg(appName, executablePath));
+            return QString();
+        }
+
+        // Double check the registation worked by retrieving from cache
+        QString verifiedId = m_monitorManager->appCache()->findAppId(executablePath);
+        if (verifiedId.isEmpty() || verifiedId != appId) {
+            LOG_WARNING(QString("App registration verification failed for %1").arg(appName));
+        } else {
+            LOG_INFO(QString("Successfully registered app with ID: %1").arg(appId));
+        }
     }
 
     return appId;

@@ -167,7 +167,7 @@ bool SyncManager::createOrReopenSession(const QDate& date, QUuid& sessionId, QDa
                 emit connectionStateChanged(false);
 
                 // Create temporary offline session
-                sessionId = QUuid::createUuid();
+                // sessionId = QUuid::createUuid();
                 sessionStart = QDateTime::currentDateTime();
                 isNewSession = true;
                 return true;
@@ -193,7 +193,7 @@ bool SyncManager::createOrReopenSession(const QDate& date, QUuid& sessionId, QDa
                 emit connectionStateChanged(false);
 
                 // Create temporary offline session
-                sessionId = QUuid::createUuid();
+                // sessionId = QUuid::createUuid();
                 sessionStart = QDateTime::currentDateTime();
                 isNewSession = true;
                 return true;
@@ -209,7 +209,7 @@ bool SyncManager::createOrReopenSession(const QDate& date, QUuid& sessionId, QDa
         LOG_WARNING("Operating in offline mode, creating local session");
         
         // Generate a temporary UUID for offline session
-        sessionId = QUuid::createUuid();
+        // sessionId = QUuid::createUuid();
         sessionStart = QDateTime::currentDateTime();
         isNewSession = true;
         
@@ -368,34 +368,7 @@ bool SyncManager::processPendingQueue(int maxItems)
                     locker.unlock();
                     bool itemSuccess = false;
 
-                    if (item.data.contains("action") && item.data["action"].toString() == "end") {
-                        // End app usage request
-                        QUuid usageId = QUuid(item.data["usage_id"].toString());
-
-                        // Ensure session_id is in the data
-                        QJsonObject modifiedData = item.data;
-                        if (!modifiedData.contains("session_id")) {
-                            modifiedData["session_id"] = item.sessionId.toString().remove('{').remove('}');
-                        }
-
-                        QJsonObject response;
-                        itemSuccess = m_apiManager->endAppUsage(usageId, modifiedData, response);
-                        emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
-                    } else {
-                        // Start app usage request
-                        QJsonObject modifiedData = item.data;
-                        if (!modifiedData.contains("session_id")) {
-                            modifiedData["session_id"] = item.sessionId.toString().remove('{').remove('}');
-                        }
-
-                        QJsonObject response;
-                        itemSuccess = m_apiManager->startAppUsage(modifiedData, response);
-                        emit dataProcessed(DataType::AppUsage, item.sessionId, itemSuccess);
-                    }
-
-                    if (!itemSuccess) {
-                        success = false;
-                    }
+                    itemSuccess = processAppUsageData(item);
 
                     locker.relock();
                     break;
@@ -725,3 +698,64 @@ void SyncManager::storeFailedBatchForRetry(const QUuid& sessionId, const QJsonOb
     }
 }
 
+bool SyncManager::processAppUsageData(const QueuedData& item) {
+    if (!m_apiManager) {
+        LOG_ERROR("API Manager not initialized for processing app usage data");
+        return false;
+    }
+
+    // Extract session ID - critical for session-based endpoints
+    QString sessionId;
+    if (item.data.contains("session_id")) {
+        sessionId = item.data["session_id"].toString().remove('{').remove('}');
+    } else if (!item.sessionId.isNull()) {
+        sessionId = item.sessionId.toString().remove('{').remove('}');
+    } else {
+        LOG_ERROR("Cannot process app usage: no session ID available");
+        return false;
+    }
+
+    // Ensure we have valid session ID
+    if (sessionId.isEmpty() || sessionId == "00000000-0000-0000-0000-000000000000") {
+        LOG_ERROR("Cannot process app usage: invalid session ID");
+        return false;
+    }
+
+    // Create a copy of the data to ensure session_id is included
+    QJsonObject data = item.data;
+    data["session_id"] = sessionId;
+
+    bool success = false;
+
+    if (data.contains("action") && data["action"].toString() == "end") {
+        // This is an end app usage request
+        if (!data.contains("usage_id") || data["usage_id"].toString().isEmpty()) {
+            LOG_ERROR("Cannot end app usage: usage_id is missing");
+            return false;
+        }
+
+        QString usageId = data["usage_id"].toString().remove('{').remove('}');
+
+        // Skip processing for null UUIDs
+        if (usageId == "00000000-0000-0000-0000-000000000000") {
+            LOG_WARNING("Skipping end app usage with null UUID");
+            return true; // Return true to remove this item from queue
+        }
+
+        QJsonObject response;
+        success = m_apiManager->endAppUsage(QUuid(usageId), data, response);
+    } else {
+        // This is a start app usage request
+        // Verify we have a valid app_id
+        if (!data.contains("app_id") || data["app_id"].toString().isEmpty() ||
+            data["app_id"].toString() == "00000000-0000-0000-0000-000000000000") {
+            LOG_WARNING("Skipping start app usage with missing or invalid app_id");
+            return true; // Return true to remove this item from queue
+        }
+
+        QJsonObject response;
+        success = m_apiManager->startAppUsage(data, response);
+    }
+
+    return success;
+}
